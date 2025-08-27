@@ -32,7 +32,7 @@ function App() {
 
     const entries = [];
     for (let i = 0; i < 30; i++) {
-      let entry = `${data.utility},${data.company},${data.consumerNo[i]},${data.mobileNo[i]}`;
+      let entry = `${data.utility},${data.company.toUpperCase()},${data.consumerNo[i]},${data.mobileNo[i]}`;
       entries.splice(i, 0, entry);
     }
     content += entries.join("\n");
