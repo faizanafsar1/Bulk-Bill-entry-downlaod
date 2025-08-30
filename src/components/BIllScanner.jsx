@@ -34,7 +34,7 @@ export default function BillScanner() {
 
     // Define crop area (center rectangle)
     const cropWidth = vw * 0.6; // 60% of video width
-    const cropHeight = 100; // fixed height (like a scan strip)
+    const cropHeight = 100; // fixed height
     const cropX = (vw - cropWidth) / 2;
     const cropY = (vh - cropHeight) / 2;
 
@@ -54,19 +54,43 @@ export default function BillScanner() {
       cropHeight // target area
     );
 
-    const imageData = canvas.toDataURL("image/png");
+    // 🔹 Preprocess image (Grayscale + Threshold)
+    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+      // grayscale = average of RGB
+      let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+
+      // simple threshold (binarization)
+      let value = avg > 150 ? 255 : 0;
+
+      data[i] = value; // Red
+      data[i + 1] = value; // Green
+      data[i + 2] = value; // Blue
+      // alpha stays the same
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    const processedImage = canvas.toDataURL("image/png");
 
     // OCR with Tesseract
-    const result = await Tesseract.recognize(imageData, "eng");
+    const result = await Tesseract.recognize(processedImage, "eng", {
+      tessedit_char_whitelist: "0123456789", // digits only
+    });
+
     const text = result.data.text;
     console.log(text, "cropped text extracted");
 
-    const refNo = text.match(/\d+/g).join("");
+    // Extract digits only
+    const refNo = text.match(/\d+/g)?.join("") || "";
 
-    if (refNo.length == 14) {
-      setBillNumbers([...billNumbers, refNo]); // take the first match
+    if (refNo.length === 14) {
+      setBillNumbers((prev) => [...prev, refNo]);
     }
   };
+
   const handleSubmit = () => {
     let content = "UTILITY,COMPANY,CONSUMER NO,MOBILE NUMBER\n";
 
@@ -93,7 +117,7 @@ export default function BillScanner() {
         <video ref={videoRef} autoPlay playsInline className="w-full" />
 
         {/* Overlay rectangle */}
-        <div className="absolute top-1/2 left-1/2 w-64 h-8 border-2 border-red-500 -translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+        <div className="absolute top-1/2 left-1/2 w-36 h-8 border-2 border-red-500 -translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
       </div>
 
       {/* Hidden canvas */}
