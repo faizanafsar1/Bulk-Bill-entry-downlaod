@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
+import { toast } from "react-toastify";
 import Tesseract from "tesseract.js";
 
 export default function BillScanner() {
@@ -65,10 +66,12 @@ export default function BillScanner() {
       const text = result.data.text;
       const refNo = text.match(/\d+/g)?.join("") || "";
 
-      // if (refNo.length === 14) {
-      //   setBillNumbers((prev) => [...prev, refNo]);
-      // }
-      setBillNumbers((prev) => [...prev, refNo]);
+      if (refNo.length === 14) {
+        setBillNumbers((prev) => [...prev, refNo]);
+        toast.success("Successfully Scanned");
+      } else {
+        toast.error(`failed to get complete number ${refNo}`);
+      }
     } catch (err) {
       console.error("OCR error:", err);
     } finally {
