@@ -38,8 +38,8 @@ export default function IescoBillScanner() {
     const vh = videoRef.current.videoHeight;
     const displayW = videoRef.current.clientWidth;
     const displayH = videoRef.current.clientHeight;
-    const boxW = 144;
-    const boxH = 32;
+    const boxW = 128;
+    const boxH = 28;
     const scaleX = vw / displayW;
     const scaleY = vh / displayH;
     const cropWidth = boxW * scaleX;
@@ -127,12 +127,33 @@ export default function IescoBillScanner() {
   return (
     <div className="flex flex-col items-center p-4 space-y-4">
       <h2 className="text-xl font-bold">IESCO </h2>
+      <div
+        className={`${
+          billNumbers.length === 0 ? "hidden" : ""
+        } border h-[30vh] gap-2 flex flex-col  overflow-y-scroll  scroll-me-1 border-gray-400 p-3 rounded-lg`}
+      >
+        {billNumbers.map((billNumber, i) => (
+          <div key={i} className="grid grid-cols-[20px_1fr] items-center rounded-lg gap-5">
+            <span className="border-r shadow-inner rounded-lg text-xxl h-fit px-3 flex justify-center  text-black">{i + 1}</span>
+            <input
+              type="number"
+              value={billNumber}
+              onChange={(e) => {
+                const updated = [...billNumbers];
+                updated[i] = e.target.value;
+                setBillNumbers(updated);
+              }}
+              className="text-xl border rounded-lg p-2 font-semibold text-center text-gray-800"
+            />
+          </div>
+        ))}
+      </div>
       <div className="flex flex-col gap-2 *:shadow-lg  items-center">
         <div className="relative border border-gray-500 rounded-xl overflow-hidden w-[200px] h-[60px]">
           <video ref={videoRef} autoPlay playsInline className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
           <div
             id="redbox"
-            className="absolute top-1/2 left-1/2 w-36 h-8 border-2 border-red-500 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+            className="absolute top-1/2 left-1/2 w-32 h-7 border-2 border-red-500 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
           ></div>{" "}
         </div>
 
@@ -172,27 +193,6 @@ export default function IescoBillScanner() {
         >
           Enter Manually
         </button>
-      </div>
-      <div
-        className={`${
-          billNumbers.length === 0 ? "hidden" : ""
-        } border h-[50vh] gap-2 flex flex-col  overflow-y-scroll scroll-auto border-gray-400 p-3 rounded-lg`}
-      >
-        {billNumbers.map((billNumber, i) => (
-          <div key={i} className="grid grid-cols-[20px_1fr] items-center rounded-lg gap-5">
-            <span className="border-r shadow-inner rounded-lg text-xxl h-fit px-3 flex justify-center  text-black">{i + 1}</span>
-            <input
-              type="number"
-              value={billNumber}
-              onChange={(e) => {
-                const updated = [...billNumbers];
-                updated[i] = e.target.value;
-                setBillNumbers(updated);
-              }}
-              className="text-xl border rounded-lg p-2 font-semibold text-center text-gray-800"
-            />
-          </div>
-        ))}
       </div>
 
       <button
