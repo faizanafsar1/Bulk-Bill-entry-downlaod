@@ -38,8 +38,8 @@ export default function GasBillScanner() {
     const vh = videoRef.current.videoHeight;
     const displayW = videoRef.current.clientWidth;
     const displayH = videoRef.current.clientHeight;
-    const boxW = 112;
-    const boxH = 28;
+    const boxW = 64;
+    const boxH = 16;
     const scaleX = vw / displayW;
     const scaleY = vh / displayH;
     const cropWidth = boxW * scaleX;
@@ -152,7 +152,7 @@ export default function GasBillScanner() {
           <video ref={videoRef} autoPlay playsInline className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
           <div
             id="redbox"
-            className="absolute top-1/2 left-1/2 w-28 h-7 border-2 border-red-500 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+            className="absolute top-1/2 left-1/2 w-16 h-4  border-2 border-red-500 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
           ></div>{" "}
         </div>
 
