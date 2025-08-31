@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { detectText } from "./TextDetector";
 import { toast } from "react-toastify";
 
@@ -7,7 +7,7 @@ export default function useBillManager() {
   const [loading, setLoading] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
 
-  const handleExtractNumber = async (videoRef, canvasRef, width) => {
+  const handleExtractNumber = async (videoRef, canvasRef, width, length) => {
     if (!videoRef.current || !canvasRef.current || loading) return;
     setLoading(true);
 
@@ -34,7 +34,7 @@ export default function useBillManager() {
       const text = await detectText(processedImage);
       const refNo = text.match(/\d+/g)?.join("") || "";
 
-      if (refNo.length === 11) {
+      if (refNo.length === length) {
         const length = billNumbers.length - 1;
         if (billNumbers[length] === "") {
           const prevArr = [...billNumbers];

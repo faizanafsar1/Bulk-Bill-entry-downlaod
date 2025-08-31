@@ -57,7 +57,7 @@ export default function ScanningPage({ title }) {
       {/* Capture Button */}
       <div className="flex flex-row-reverse gap-2">
         <button
-          onClick={() => handleExtractNumber(videoRef, canvasRef, title === "SNGPL" ? 64 : 80)}
+          onClick={() => handleExtractNumber(videoRef, canvasRef, title === "SNGPL" ? 64 : 80, title === "SNGPL" ? 11 : 14)}
           disabled={loading}
           className={` select-none px-6 py-2 rounded-lg shadow transition ${
             loading ? "bg-gray-400 cursor-not-allowed" : "bg-teal-600 hover:bg-teal-700 text-white"
