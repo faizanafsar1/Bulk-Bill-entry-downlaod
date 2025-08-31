@@ -5,6 +5,8 @@ export default function BillScanner() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [billNumbers, setBillNumbers] = useState([]);
+  const [previewImage, setPreviewImage] = useState(null); // 👈 add state
+
   const [loading, setLoading] = useState(false);
 
   // ✅ Start camera
@@ -32,22 +34,23 @@ export default function BillScanner() {
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
-
     const vw = videoRef.current.videoWidth;
     const vh = videoRef.current.videoHeight;
-
-    const cropWidth = vw * 0.6;
-    const cropHeight = 100;
+    const displayW = videoRef.current.clientWidth;
+    const displayH = videoRef.current.clientHeight;
+    const boxW = 144;
+    const boxH = 32;
+    const scaleX = vw / displayW;
+    const scaleY = vh / displayH;
+    const cropWidth = boxW * scaleX;
+    const cropHeight = boxH * scaleY;
     const cropX = (vw - cropWidth) / 2;
     const cropY = (vh - cropHeight) / 2;
-
     canvas.width = cropWidth;
     canvas.height = cropHeight;
-
     ctx.drawImage(videoRef.current, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-
     const processedImage = canvas.toDataURL("image/png");
-
+    setPreviewImage(processedImage);
     try {
       const text = await detectText(processedImage);
       const refNo = text.match(/\d+/g)?.join("") || "";
@@ -110,9 +113,17 @@ export default function BillScanner() {
 
       <div className="relative w-full max-w-md border-2 border-gray-500 rounded-xl overflow-hidden">
         <video ref={videoRef} autoPlay playsInline className="w-full" />
-        <div className="absolute top-1/2 left-1/2 w-36 h-8 border-2 border-red-500 -translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+        <div
+          id="redbox"
+          className="absolute top-1/2 left-1/2 w-36 h-8 border-2 border-red-500 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+        ></div>
       </div>
-
+      {previewImage && (
+        <div className="mt-4">
+          <p className="text-sm text-gray-600">Extracted Region:</p>
+          <img src={previewImage} alt="Extracted region" className="border rounded-lg" />
+        </div>
+      )}
       <canvas ref={canvasRef} className="hidden" />
 
       {/* Capture Button */}
