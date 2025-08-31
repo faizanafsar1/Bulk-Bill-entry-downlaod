@@ -155,7 +155,7 @@ function BulkEntryPage() {
         </select>
       </div>
       <div className="flex gap-5 w-5xl ">
-        <form className="flex flex-3 *:capitalize flex-col gap-2 border rounded-lg w-3xl p-2 ">
+        <form className="flex flex-3 *:capitalize flex-col gap-2 border border-rose-600 rounded-lg w-3xl p-2 ">
           <div className=" bg-gray-200 flex p-2 rounded-lg ">
             <label className="ml-10">Utility</label>
             <label className="ml-52 mr-44">Company</label>
