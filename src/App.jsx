@@ -9,13 +9,13 @@ export default function App() {
   return (
     <div>
       {/* Navigation */}
-      <nav className="*:border mt-2 justify-center text-xs tracking-tight justify-items-center max-md:gap-2 gap-5 flex *:p-2 *:rounded-lg *:bg-gray-100">
-        <Link to="/">Bulk Entry Page</Link> <Link to="/gas">Gas Bill Scanner Page</Link>
-        <Link to="/iesco">IESCO Bill Scanner Page</Link>
+      <nav className="*:border mt-2 justify-center select-none text-xs tracking-tight justify-items-center max-md:gap-2 gap-5 flex *:p-2 *:rounded-lg *:bg-gray-100">
+        <Link to="/">Bulk Entry </Link> <Link to="/gas">Gas Bill Scanner </Link>
+        <Link to="/iesco">IESCO Bill Scanner </Link>
       </nav>
       <ToastContainer
-        position="top-right" // where toast shows
-        autoClose={1000} // auto hide after 3s
+        position="top-right"
+        autoClose={1000}
         hideProgressBar={false}
         newestOnTop={false}
         closeOnClick
@@ -23,9 +23,9 @@ export default function App() {
         pauseOnFocusLoss
         draggable
         pauseOnHover
-        theme="light" // dark, colored, or light
+        theme="light"
       />
-      {/* Routes */}
+
       <Routes>
         <Route path="/" element={<BulkEntryPage />} />
         <Route path="/gas" element={<GasBillScanner />} />
