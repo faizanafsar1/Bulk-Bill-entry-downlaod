@@ -1,13 +1,13 @@
 import React, { useRef, useState, useEffect } from "react";
 import { toast } from "react-toastify";
-import Tesseract from "tesseract.js";
 
 export default function BillScanner() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [billNumbers, setBillNumbers] = useState([]);
-  const [loading, setLoading] = useState(false); // 🔹 new state
+  const [loading, setLoading] = useState(false);
 
+  // ✅ Start camera
   useEffect(() => {
     async function startCamera() {
       try {
@@ -25,10 +25,10 @@ export default function BillScanner() {
     startCamera();
   }, []);
 
+  // ✅ Extract number
   const handleExtractNumber = async () => {
     if (!videoRef.current || !canvasRef.current || loading) return;
-
-    setLoading(true); // ⬅️ Start loading
+    setLoading(true);
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -46,54 +46,62 @@ export default function BillScanner() {
 
     ctx.drawImage(videoRef.current, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
 
-    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    let data = imageData.data;
-
-    for (let i = 0; i < data.length; i += 4) {
-      let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-      let value = avg > 150 ? 255 : 0;
-      data[i] = data[i + 1] = data[i + 2] = value;
-    }
-
-    ctx.putImageData(imageData, 0, 0);
     const processedImage = canvas.toDataURL("image/png");
 
     try {
-      const result = await Tesseract.recognize(processedImage, "eng", {
-        tessedit_char_whitelist: "0123456789",
-      });
-
-      const text = result.data.text;
+      const text = await detectText(processedImage);
       const refNo = text.match(/\d+/g)?.join("") || "";
 
-      if (refNo.length === 14) {
+      if (refNo.length === 14 || refNo.length === 11) {
         setBillNumbers((prev) => [...prev, refNo]);
-        toast.success("Successfully Scanned");
+        toast.success("✅ Successfully Scanned");
       } else {
-        toast.error(`failed to get complete number ${refNo}`);
+        toast.error(`❌ Failed to get complete number: ${refNo}`);
       }
     } catch (err) {
       console.error("OCR error:", err);
     } finally {
-      setLoading(false); // ⬅️ End loading
+      setLoading(false);
     }
   };
+
   const handleSubmit = () => {
     let content = "UTILITY,COMPANY,CONSUMER NO,MOBILE NUMBER\n";
-
-    const entries = [];
-    for (let i = 0; i < billNumbers.length; i++) {
-      let entry = `Electricity,IESCO,${billNumbers[i]},03211041960`;
-      entries.push(entry);
-    }
+    const entries = billNumbers.map((num) => `Electricity,IESCO,${num},03211041960`);
     content += entries.join("\n");
 
     const blob = new Blob([content], { type: "text/plain" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    const name = Math.random().toString(36).slice(2, 8); // cleaner filename
+    const name = Math.random().toString(36).slice(2, 8);
     link.download = `${name}.txt`;
     link.click();
+  };
+
+  // 🔑 OCR.space API key
+  const API_KEY = "K81404182788957";
+
+  // ✅ OCR.space detect function
+  const detectText = async (base64Image) => {
+    try {
+      const formData = new FormData();
+      formData.append("apikey", API_KEY);
+      formData.append("base64Image", base64Image);
+      formData.append("language", "eng");
+
+      const response = await fetch("https://api.ocr.space/parse/image", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+      console.log("OCR.space result:", result);
+
+      return result.ParsedResults?.[0]?.ParsedText || "";
+    } catch (error) {
+      console.error("OCR.space error:", error);
+      return "";
+    }
   };
 
   return (
@@ -110,7 +118,7 @@ export default function BillScanner() {
       {/* Capture Button */}
       <button
         onClick={handleExtractNumber}
-        disabled={loading} // 🔹 disable while loading
+        disabled={loading}
         className={`px-6 py-2 rounded-lg shadow transition ${
           loading ? "bg-gray-400 cursor-not-allowed" : "bg-teal-600 hover:bg-teal-700 text-white"
         }`}
@@ -136,7 +144,7 @@ export default function BillScanner() {
       ))}
 
       <button
-        onClick={() => handleSubmit()}
+        onClick={handleSubmit}
         className="flex m-5 p-2 py-1.5 hover:bg-gray-100 cursor-pointer focus:shadow-inner shadow-black/50 mx-auto justify-self-center border border-gray-600 rounded-lg "
       >
         Download File
