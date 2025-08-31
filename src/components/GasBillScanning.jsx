@@ -64,9 +64,9 @@ export default function GasBillScanner() {
         } else {
           setBillNumbers((prev) => [...prev, refNo]);
         }
-        toast.success("✅ Successfully Scanned");
+        toast.success("Successfully Scanned");
       } else {
-        toast.error(`❌ Failed to get complete number: ${refNo}`);
+        toast.error(`Failed to get complete number: ${refNo}`);
       }
     } catch (err) {
       console.error("OCR error:", err);
@@ -99,10 +99,8 @@ export default function GasBillScanner() {
     setBillNumbers([]);
   };
 
-  // 🔑 OCR.space API key
   const API_KEY = "K81404182788957";
 
-  // ✅ OCR.space detect function
   const detectText = async (base64Image) => {
     try {
       const formData = new FormData();
@@ -127,8 +125,8 @@ export default function GasBillScanner() {
 
   return (
     <div className="flex flex-col items-center p-4 space-y-4">
-      <h2 className="text-2xl font-bold">SNGPL </h2>
-      <div className="flex gap-5 *:shadow-lg  items-center">
+      <h2 className="text-xl font-bold">SNGPL </h2>
+      <div className="flex flex-col gap-2 *:shadow-lg  items-center">
         <div className="relative border border-gray-500 rounded-xl overflow-hidden w-[200px] h-[60px]">
           <video ref={videoRef} autoPlay playsInline className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
           <div
@@ -147,39 +145,41 @@ export default function GasBillScanner() {
       <canvas ref={canvasRef} className="hidden" />
 
       {/* Capture Button */}
-      <button
-        onClick={handleExtractNumber}
-        disabled={loading}
-        className={`px-6 py-2 rounded-lg shadow transition ${
-          loading ? "bg-gray-400 cursor-not-allowed" : "bg-teal-600 hover:bg-teal-700 text-white"
-        }`}
-      >
-        {loading ? (
-          <div className="flex items-center gap-2">
-            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-            </svg>
-            Processing...
-          </div>
-        ) : (
-          "Capture & Extract"
-        )}
-      </button>
-      <button
-        onClick={handleInput}
-        className={` flexp-2 py-1.5 px-2 hover:bg-gray-100 cursor-pointer focus:shadow-inner shadow-black/50 mx-auto justify-self-center border border-gray-600 rounded-lg `}
-      >
-        Enter Manually
-      </button>
+      <div className="flex gap-2">
+        <button
+          onClick={handleExtractNumber}
+          disabled={loading}
+          className={`px-6 py-2 rounded-lg shadow transition ${
+            loading ? "bg-gray-400 cursor-not-allowed" : "bg-teal-600 hover:bg-teal-700 text-white"
+          }`}
+        >
+          {loading ? (
+            <div className="flex items-center gap-2">
+              <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+              Processing...
+            </div>
+          ) : (
+            "Capture & Extract"
+          )}
+        </button>
+        <button
+          onClick={handleInput}
+          className={` flexp-2 py-1.5 px-2 hover:bg-gray-100 cursor-pointer focus:shadow-inner shadow-black/50 mx-auto justify-self-center border border-gray-600 rounded-lg `}
+        >
+          Enter Manually
+        </button>
+      </div>
       <div
         className={`${
           billNumbers.length === 0 ? "hidden" : ""
-        } border h-[50vh]  overflow-y-scroll scroll-auto border-gray-400 p-3 rounded-lg`}
+        } border h-[50vh] gap-2 flex flex-col  overflow-y-scroll scroll-auto border-gray-400 p-3 rounded-lg`}
       >
         {billNumbers.map((billNumber, i) => (
-          <div key={i} className="flex rounded-lg gap-2">
-            <span className="border-r rounded-lg text-2xl h-fit px-2 mr-2 text-black">{i + 1}</span>
+          <div key={i} className="grid grid-cols-[20px_1fr] items-center rounded-lg gap-5">
+            <span className="border-r shadow-inner rounded-lg text-xxl h-fit px-3 flex justify-center  text-black">{i + 1}</span>
             <input
               type="number"
               value={billNumber}

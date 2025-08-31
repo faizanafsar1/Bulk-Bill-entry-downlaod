@@ -9,7 +9,7 @@ export default function App() {
   return (
     <div>
       {/* Navigation */}
-      <nav className="*:border mt-2 justify-center justify-items-center gap-10 flex *:p-2 *:rounded-lg *:bg-gray-100">
+      <nav className="*:border mt-2 justify-center text-xs tracking-tight justify-items-center max-md:gap-2 gap-5 flex *:p-2 *:rounded-lg *:bg-gray-100">
         <Link to="/">Bulk Entry Page</Link> <Link to="/gas">Gas Bill Scanner Page</Link>
         <Link to="/iesco">IESCO Bill Scanner Page</Link>
       </nav>
