@@ -35,15 +35,19 @@ export default function useBillManager() {
       const refNo = text.match(/\d+/g)?.join("") || "";
 
       if (refNo.length === length) {
-        const length = billNumbers.length - 1;
-        if (billNumbers[length] === "") {
-          const prevArr = [...billNumbers];
-          prevArr[length] = refNo;
-          setBillNumbers(prevArr);
+        if (billNumbers.includes(refNo)) {
+          toast.error("Bill already added");
         } else {
-          setBillNumbers((prev) => [...prev, refNo]);
+          const lastIndex = billNumbers.length - 1;
+          if (billNumbers[lastIndex] === "") {
+            const prevArr = [...billNumbers];
+            prevArr[lastIndex] = refNo;
+            setBillNumbers(prevArr);
+          } else {
+            setBillNumbers((prev) => [...prev, refNo]);
+          }
+          toast.success("Successfully Scanned");
         }
-        toast.success("Successfully Scanned");
       } else {
         toast.error(`Failed to get complete number: ${refNo}`);
       }
@@ -54,33 +58,43 @@ export default function useBillManager() {
     }
   };
   const handleInput = () => {
-    setBillNumbers((prev) => [...prev, ""]);
+    const lastIndex = billNumbers.length - 1;
+
+    if (billNumbers[lastIndex] === "") {
+      toast.error("Fill the blank input first");
+    } else {
+      setBillNumbers((prev) => [...prev, ""]);
+    }
   };
   const handleSubmit = () => {
-    let content = "UTILITY,COMPANY,CONSUMER NO,MOBILE NUMBER\n";
-    let companyDetails;
-    if (billNumbers[0].length === 14) {
-      companyDetails = "Electricity,IESCO,";
-    } else if (billNumbers[0].length === 11) {
-      companyDetails = "Gas,SNGPL,";
+    if (billNumbers[0].length === 11 || billNumbers[0].length === 14) {
+      let content = "UTILITY,COMPANY,CONSUMER NO,MOBILE NUMBER\n";
+      let companyDetails;
+      if (billNumbers[0].length === 14) {
+        companyDetails = "Electricity,IESCO,";
+      } else if (billNumbers[0].length === 11) {
+        companyDetails = "Gas,SNGPL,";
+      }
+      const entries = billNumbers
+        .map((num) => {
+          if (num !== "") {
+            return `${companyDetails}${num},03211041960`;
+          }
+        })
+        .filter(Boolean);
+      content += entries.join("\n");
+
+      const blob = new Blob([content], { type: "text/plain" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      const name = billNumbers[0];
+      link.download = `${name}.txt`;
+      link.click();
+
+      setBillNumbers([]);
+    } else {
+      toast.error("first bill number is incorrect");
     }
-    const entries = billNumbers
-      .map((num) => {
-        if (num !== "") {
-          return `${companyDetails}${num},03211041960`;
-        }
-      })
-      .filter(Boolean);
-    content += entries.join("\n");
-
-    const blob = new Blob([content], { type: "text/plain" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    const name = billNumbers[0];
-    link.download = `${name}.txt`;
-    link.click();
-
-    setBillNumbers([]);
   };
 
   return { loading, previewImage, billNumbers, setBillNumbers, handleSubmit, handleInput, handleExtractNumber };
