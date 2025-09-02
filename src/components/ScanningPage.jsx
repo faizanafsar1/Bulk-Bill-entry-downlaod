@@ -1,20 +1,27 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import useStartCamera from "../hooks/StartCamera";
 import useBillManager from "../hooks/BillManager";
 
 export default function ScanningPage({ title }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  useStartCamera(videoRef);
+  const listRef = useRef(null);
   const { loading, previewImage, billNumbers, setBillNumbers, handleSubmit, handleInput, handleExtractNumber } = useBillManager(
     videoRef,
     canvasRef
   );
+  useEffect(() => {
+    if (listRef.current) {
+      listRef.current.scrollTop = listRef.current.scrollHeight;
+    }
+  }, [billNumbers]);
+  useStartCamera(videoRef);
 
   return (
     <div className="flex flex-col items-center p-4 space-y-4">
       <h2 className="text-xl font-bold">{title} </h2>{" "}
       <div
+        ref={listRef}
         className={`${
           billNumbers.length === 0 ? "hidden" : ""
         } border h-[30vh] gap-2 flex flex-col  overflow-y-scroll scroll-auto border-gray-400 p-3 rounded-lg`}
