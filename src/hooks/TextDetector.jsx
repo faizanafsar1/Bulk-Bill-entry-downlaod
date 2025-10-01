@@ -1,4 +1,4 @@
-const API_KEY = "K81404182788957";
+const API_KEY = "K88096895588957";
 const detectText = async (base64Image) => {
   try {
     const formData = new FormData();
