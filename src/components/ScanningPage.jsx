@@ -43,7 +43,7 @@ export default function ScanningPage({ title }) {
         ))}
       </div>
       <div className="select-none flex flex-col gap-2 *:shadow-lg  items-center">
-        <div className="relative border border-gray-500 rounded-xl overflow-hidden w-[200px] h-[60px]">
+        <div className="relative border scale-140  border-gray-500 rounded-xl overflow-hidden w-[200px] h-[60px]">
           <video ref={videoRef} autoPlay playsInline className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
           <div
             id="redbox"
@@ -90,7 +90,10 @@ export default function ScanningPage({ title }) {
         </button>
       </div>
       <button
-        onClick={handleSubmit}
+        onClick={() => {
+          const confirmed = confirm("Confirm download?");
+          if (confirmed) handleSubmit();
+        }}
         className={`${
           billNumbers.length === 0 ? "hidden" : ""
         } flex m-5 p-2 py-1.5 hover:bg-gray-100 cursor-pointer focus:shadow-inner shadow-black/50 mx-auto justify-self-center border border-gray-600 rounded-lg `}

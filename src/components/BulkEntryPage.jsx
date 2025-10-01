@@ -1,4 +1,12 @@
-import { faCheck } from "@fortawesome/free-solid-svg-icons";
+import { faGoodreads } from "@fortawesome/free-brands-svg-icons";
+import {
+  faCheck,
+  faCheckCircle,
+  faCheckDouble,
+  faCheckSquare,
+  faCheckToSlot,
+  faFlagCheckered,
+} from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import React, { useEffect, useState } from "react";
 
@@ -267,7 +275,7 @@ function BulkEntryPage() {
             onClick={() => handleDefaultMobNo()}
             className="flex text-2xl   hover:bg-gray-100 cursor-pointer focus:shadow-inner shadow-black/50 mx-auto justify-self-center border border-gray-300 rounded-lg "
           >
-            <FontAwesomeIcon className="m-auto text-green-500  " icon={faCheck}></FontAwesomeIcon>
+            <FontAwesomeIcon className="m-auto px-5 text-green-500  " icon={faCheck}></FontAwesomeIcon>
           </button>
           <button
             onClick={() => handleMobileReset()}
@@ -278,7 +286,10 @@ function BulkEntryPage() {
         </div>
       </div>
       <button
-        onClick={() => handleSubmit()}
+        onClick={() => {
+          const confirmed = confirm("Confirm download?");
+          if (confirmed) handleSubmit();
+        }}
         className="flex m-5 p-2 py-1.5 hover:bg-gray-100 cursor-pointer focus:shadow-inner shadow-black/50 mx-auto justify-self-center border border-gray-600 rounded-lg "
       >
         Download File
