@@ -1,5 +1,6 @@
-const API_KEY = "K85922319688957";
+const API_KEY = import.meta.env.VITE_API_KEY;
 const detectText = async (base64Image) => {
+  console.log("api key", API_KEY);
   try {
     const formData = new FormData();
     formData.append("apikey", API_KEY);
