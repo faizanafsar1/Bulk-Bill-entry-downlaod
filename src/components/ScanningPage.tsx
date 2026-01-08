@@ -1,25 +1,31 @@
+"use client";
+
 import { useEffect, useRef } from "react";
 import useStartCamera from "../hooks/StartCamera";
 import useBillManager from "../hooks/BillManager";
 
-export default function ScanningPage({ title }) {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const listRef = useRef(null);
-  const { loading, previewImage, billNumbers, setBillNumbers, handleSubmit, handleInput, handleExtractNumber } = useBillManager(
-    videoRef,
-    canvasRef
-  );
+interface ScanningPageProps {
+  title: string;
+}
+
+export default function ScanningPage({ title }: ScanningPageProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const { loading, previewImage, billNumbers, setBillNumbers, handleSubmit, handleInput, handleExtractNumber } =
+    useBillManager();
+
   useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
   }, [billNumbers]);
+
   useStartCamera(videoRef);
 
   return (
     <div className="flex flex-col items-center p-4 space-y-4">
-      <h2 className="text-xl font-bold">{title} </h2>{" "}
+      <h2 className="text-xl font-bold">{title}</h2>
       <div
         ref={listRef}
         className={`${
@@ -28,7 +34,9 @@ export default function ScanningPage({ title }) {
       >
         {billNumbers.map((billNumber, i) => (
           <div key={i} className="grid grid-cols-[20px_1fr] items-center rounded-lg gap-5">
-            <span className="border-r shadow-inner rounded-lg text-xxl h-fit px-3 flex justify-center  text-black">{i + 1}</span>
+            <span className="border-r shadow-inner rounded-lg text-xxl h-fit px-3 flex justify-center  text-black">
+              {i + 1}
+            </span>
             <input
               type="number"
               value={billNumber}
@@ -50,7 +58,7 @@ export default function ScanningPage({ title }) {
             className={`absolute top-1/2 left-1/2 ${
               title === "SNGPL" ? "w-[64px]" : "w-[80px]"
             } h-4  border-2 border-red-500 -translate-x-1/2 -translate-y-1/2 pointer-events-none`}
-          ></div>{" "}
+          ></div>
         </div>
 
         {previewImage && (
@@ -103,3 +111,4 @@ export default function ScanningPage({ title }) {
     </div>
   );
 }
+

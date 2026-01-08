@@ -1,8 +1,10 @@
+"use client";
+
 import { useEffect } from "react";
 
-export default function useStartCamera(videoRef) {
+export default function useStartCamera(videoRef: React.RefObject<HTMLVideoElement | null>): void {
   useEffect(() => {
-    async function startCamera() {
+    async function startCamera(): Promise<void> {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" },
@@ -16,5 +18,5 @@ export default function useStartCamera(videoRef) {
       }
     }
     startCamera();
-  }, []);
+  }, [videoRef]);
 }

@@ -1,39 +1,44 @@
-import { faGoodreads } from "@fortawesome/free-brands-svg-icons";
-import {
-  faCheck,
-  faCheckCircle,
-  faCheckDouble,
-  faCheckSquare,
-  faCheckToSlot,
-  faFlagCheckered,
-} from "@fortawesome/free-solid-svg-icons";
+"use client";
+
+import { faCheck } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import React, { useEffect, useState } from "react";
 
-function BulkEntryPage() {
-  const [defaultNo, setDefaultNo] = useState();
-  const [rows, setRows] = useState(() => {
-    const rowsInLocalStorage = localStorage.getItem("rows");
-    return rowsInLocalStorage ? Number(rowsInLocalStorage) : 30;
+interface FormData {
+  utility: string;
+  company: string;
+  consumerNo: string[];
+  mobileNo: string[];
+}
+
+export default function BulkEntryPage() {
+  const [defaultNo, setDefaultNo] = useState<string>("");
+  const [rows, setRows] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const rowsInLocalStorage = localStorage.getItem("rows");
+      return rowsInLocalStorage ? Number(rowsInLocalStorage) : 30;
+    }
+    return 30;
   });
 
-  const [data, setData] = useState({
+  const [data, setData] = useState<FormData>({
     utility: "",
     company: "",
-    consumerNo: Array(rows).fill(""), // 30 empty strings
+    consumerNo: Array(rows).fill(""),
     mobileNo: Array(rows).fill(""),
   });
 
   // handle consumer number change
-  const handleConsumerChange = (value, i) => {
+  const handleConsumerChange = (value: string, i: number): void => {
     setData((prev) => {
       const newConsumer = [...prev.consumerNo];
       newConsumer[i] = value;
       return { ...prev, consumerNo: newConsumer };
     });
   };
+
   // handle mobile number change
-  const handleMobNoChange = (value, i) => {
+  const handleMobNoChange = (value: string, i: number): void => {
     setData((prev) => {
       const newMobNo = [...prev.mobileNo];
       newMobNo[i] = value;
@@ -41,10 +46,10 @@ function BulkEntryPage() {
     });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = (): void => {
     let content = "UTILITY,COMPANY,CONSUMER NO,MOBILE NUMBER\n";
 
-    const entries = [];
+    const entries: string[] = [];
     for (let i = 0; i < rows + 1; i++) {
       if (data.consumerNo[i]) {
         let entry = `${data.utility},${data.company.toUpperCase()},${data.consumerNo[i]},${data.mobileNo[i]}`;
@@ -60,7 +65,9 @@ function BulkEntryPage() {
     link.download = `${name}.txt`;
     link.click();
 
-    localStorage.clear();
+    if (typeof window !== "undefined") {
+      localStorage.clear();
+    }
     setData({
       utility: "",
       company: "",
@@ -69,10 +76,13 @@ function BulkEntryPage() {
     });
     setRows(30);
   };
-  const resetForm = () => {
+
+  const resetForm = (): void => {
     const confirmed = window.confirm("Are you sure ?");
     if (confirmed) {
-      localStorage.clear();
+      if (typeof window !== "undefined") {
+        localStorage.clear();
+      }
       setData({
         utility: "",
         company: "",
@@ -84,11 +94,13 @@ function BulkEntryPage() {
   };
 
   useEffect(() => {
-    const handleLocalStorageData = () => {
-      const utility = localStorage.getItem("utility");
-      const company = localStorage.getItem("company");
-      const newCons = [...data.consumerNo];
-      const newMob = [...data.mobileNo];
+    if (typeof window === "undefined") return;
+
+    const handleLocalStorageData = (): void => {
+      const utility = localStorage.getItem("utility") || "";
+      const company = localStorage.getItem("company") || "";
+      const newCons: string[] = Array(rows + 1).fill("");
+      const newMob: string[] = Array(rows + 1).fill("");
       for (let x = 0; x < rows + 1; x++) {
         const cons = localStorage.getItem(`${x}consumer`);
         const mob = localStorage.getItem(`${x}mobile`);
@@ -103,13 +115,16 @@ function BulkEntryPage() {
       });
     };
     handleLocalStorageData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
 
-  const handleDefaultMobNo = () => {
+  const handleDefaultMobNo = (): void => {
     if (!defaultNo) return;
     for (let i = 0; i < rows + 1; i++) {
       if (!data.mobileNo[i]) {
-        localStorage.setItem(`${i}mobile`, defaultNo);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(`${i}mobile`, defaultNo);
+        }
 
         setData((prev) => {
           const defaultMob = [...prev.mobileNo];
@@ -123,11 +138,13 @@ function BulkEntryPage() {
     }
   };
 
-  const handleMobileReset = () => {
+  const handleMobileReset = (): void => {
     for (let i = 0; i < rows + 1; i++) {
       setDefaultNo("");
       if (data.mobileNo[i]) {
-        localStorage.setItem(`${i}mobile`, "");
+        if (typeof window !== "undefined") {
+          localStorage.setItem(`${i}mobile`, "");
+        }
         setData((prev) => {
           const defaultMob = [...prev.mobileNo];
           defaultMob[i] = "";
@@ -139,6 +156,7 @@ function BulkEntryPage() {
       }
     }
   };
+
   return (
     <section className=" pt-10 justify-items-center">
       <h1 className=" text-2xl mb-5 text-center">Download Bulk Entry File For EasyPaisa</h1>
@@ -152,8 +170,11 @@ function BulkEntryPage() {
         <select
           value={rows}
           onChange={(e) => {
-            setRows(() => e.target.value);
-            localStorage.setItem("rows", e.target.value);
+            const newRows = Number(e.target.value);
+            setRows(newRows);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("rows", String(newRows));
+            }
           }}
           className="border rounded-md px-2 py-1  "
         >
@@ -176,12 +197,14 @@ function BulkEntryPage() {
             <span className="m-auto text-lg shadow-inner  border-r rounded-md px-1.5 py-0.5 flex  ">1</span>
             <select
               value={data.utility}
-              onChange={(e) =>
-                setData((prev) => {
+              onChange={(e) => {
+                if (typeof window !== "undefined") {
                   localStorage.setItem("utility", e.target.value);
+                }
+                setData((prev) => {
                   return { ...prev, utility: e.target.value };
-                })
-              }
+                });
+              }}
               className="border rounded-md px-2 py-1 "
             >
               <option>select one</option>
@@ -192,12 +215,14 @@ function BulkEntryPage() {
             {/* Company */}
             <select
               value={data.company}
-              onChange={(e) =>
-                setData((prev) => {
+              onChange={(e) => {
+                if (typeof window !== "undefined") {
                   localStorage.setItem("company", e.target.value);
+                }
+                setData((prev) => {
                   return { ...prev, company: e.target.value };
-                })
-              }
+                });
+              }}
               className="border rounded-md px-2 py-1 "
             >
               <option>select company</option>
@@ -214,7 +239,9 @@ function BulkEntryPage() {
               className="border rounded-md px-2 py-1"
               onChange={(e) => {
                 handleConsumerChange(e.target.value, 0);
-                localStorage.setItem("0consumer", e.target.value);
+                if (typeof window !== "undefined") {
+                  localStorage.setItem("0consumer", e.target.value);
+                }
               }}
               type="number"
               value={data.consumerNo[0]}
@@ -226,7 +253,9 @@ function BulkEntryPage() {
               value={data.mobileNo[0]}
               onChange={(e) => {
                 handleMobNoChange(e.target.value, 0);
-                localStorage.setItem("0mobile", e.target.value);
+                if (typeof window !== "undefined") {
+                  localStorage.setItem("0mobile", e.target.value);
+                }
               }}
             />
 
@@ -242,7 +271,9 @@ function BulkEntryPage() {
                   value={data.consumerNo[i + 1]}
                   onChange={(e) => {
                     handleConsumerChange(e.target.value, i + 1);
-                    localStorage.setItem(`${i + 1}consumer`, e.target.value);
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem(`${i + 1}consumer`, e.target.value);
+                    }
                   }}
                 />
                 <input
@@ -252,7 +283,9 @@ function BulkEntryPage() {
                   value={data.mobileNo[i + 1]}
                   onChange={(e) => {
                     handleMobNoChange(e.target.value, i + 1);
-                    localStorage.setItem(`${i + 1}mobile`, e.target.value);
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem(`${i + 1}mobile`, e.target.value);
+                    }
                   }}
                 />
               </React.Fragment>
@@ -298,4 +331,3 @@ function BulkEntryPage() {
   );
 }
 
-export default BulkEntryPage;

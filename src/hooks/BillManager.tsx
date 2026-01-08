@@ -1,18 +1,45 @@
+"use client";
+
 import { useState } from "react";
 import { detectText } from "./TextDetector";
 import { toast } from "react-toastify";
 
-export default function useBillManager() {
-  const [billNumbers, setBillNumbers] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [previewImage, setPreviewImage] = useState(null);
+interface UseBillManagerReturn {
+  loading: boolean;
+  previewImage: string | null;
+  billNumbers: string[];
+  setBillNumbers: React.Dispatch<React.SetStateAction<string[]>>;
+  handleSubmit: () => void;
+  handleInput: () => void;
+  handleExtractNumber: (
+    videoRef: React.RefObject<HTMLVideoElement | null>,
+    canvasRef: React.RefObject<HTMLCanvasElement | null>,
+    width: number,
+    length: number
+  ) => Promise<void>;
+}
 
-  const handleExtractNumber = async (videoRef, canvasRef, width, length) => {
+export default function useBillManager(): UseBillManagerReturn {
+  const [billNumbers, setBillNumbers] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  const handleExtractNumber = async (
+    videoRef: React.RefObject<HTMLVideoElement | null>,
+    canvasRef: React.RefObject<HTMLCanvasElement | null>,
+    width: number,
+    length: number
+  ): Promise<void> => {
     if (!videoRef.current || !canvasRef.current || loading) return;
     setLoading(true);
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      setLoading(false);
+      return;
+    }
+
     const vw = videoRef.current.videoWidth;
     const vh = videoRef.current.videoHeight;
     const displayW = videoRef.current.clientWidth;
@@ -57,7 +84,8 @@ export default function useBillManager() {
       setLoading(false);
     }
   };
-  const handleInput = () => {
+
+  const handleInput = (): void => {
     const lastIndex = billNumbers.length - 1;
 
     if (billNumbers[lastIndex] === "") {
@@ -66,22 +94,26 @@ export default function useBillManager() {
       setBillNumbers((prev) => [...prev, ""]);
     }
   };
-  const handleSubmit = () => {
-    if (billNumbers[0].length === 11 || billNumbers[0].length === 14) {
+
+  const handleSubmit = (): void => {
+    if (billNumbers[0] && (billNumbers[0].length === 11 || billNumbers[0].length === 14)) {
       let content = "UTILITY,COMPANY,CONSUMER NO,MOBILE NUMBER\n";
-      let companyDetails;
+      let companyDetails: string;
       if (billNumbers[0].length === 14) {
         companyDetails = "Electricity,IESCO,";
       } else if (billNumbers[0].length === 11) {
         companyDetails = "Gas,SNGPL,";
+      } else {
+        companyDetails = "";
       }
       const entries = billNumbers
         .map((num) => {
           if (num !== "") {
             return `${companyDetails}${num},03211041960`;
           }
+          return null;
         })
-        .filter(Boolean);
+        .filter((entry): entry is string => entry !== null);
       content += entries.join("\n");
 
       const blob = new Blob([content], { type: "text/plain" });
