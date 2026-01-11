@@ -64,10 +64,18 @@ export default function GetGasBillPage() {
 
   const handlePrintBill = () => {
     if (billData) {
-      const updatedBillData = billData.replace(
-        /(<body[^>]*>\s*<div class="sheet"[^>]*>\s*<img\s+src=")[^"]*(")/,
-        `$1https://www.sngpl.com.pk/images/billImages/BillPrintV25-7.jpeg$2`
-      );
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(billData, "text/html");
+
+      // Select the img inside body > div.sheet > img
+      const img = doc.querySelector("body > div.sheet > img");
+      if (img) {
+        // Replace the src with your new URL
+        (img as HTMLImageElement).src = "https://www.sngpl.com.pk/images/billImages/BillPrintV25-7.jpeg";
+      }
+
+      // Serialize the updated DOM back to a string
+      const updatedBillData = doc.documentElement.outerHTML;
       const printWindow = window.open("", "_blank");
       if (printWindow) {
         printWindow.document.open();
