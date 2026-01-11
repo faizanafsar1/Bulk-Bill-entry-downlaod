@@ -25,7 +25,6 @@ export async function solveCaptcha(page: any, consumerNo: string) {
       const captchaText = result.toUpperCase().replace(/\s+/g, "");
       const cookies = await page.cookies();
       const jsession = cookies.find((c: any) => c.name === "JSESSIONID");
-
       const res = await fetch("https://www.sngpl.com.pk/viewbill", {
         method: "POST",
         headers: {

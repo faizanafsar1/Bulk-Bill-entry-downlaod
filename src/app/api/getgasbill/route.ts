@@ -1,39 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import puppeteer, { Browser, Page } from "puppeteer";
+import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 import { solveCaptcha } from "../../lib/CaptchaSolver";
 
-let browserInstance: Browser | null = null;
-let mainPage: Page | null = null;
+let browserInstance: any = null;
+let mainPage: any = null;
 
-// Get existing or launch new browser and get or create main page
-async function getBrowserAndPage(): Promise<Page> {
+async function getBrowserAndPage(): Promise<any> {
   if (!browserInstance) {
     browserInstance = await puppeteer.launch({
-      headless: true, // set false for debugging
-      args: ["--start-maximized"],
+      headless: false, // set false for debugging
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
       defaultViewport: null,
     });
   }
+
   if (!mainPage) {
     const pages = await browserInstance.pages();
     mainPage = pages.length > 0 ? pages[0] : await browserInstance.newPage();
   }
-  return mainPage;
-}
 
-async function cleanup() {
-  if (mainPage) {
-    try {
-      await mainPage.close();
-    } catch {}
-    mainPage = null;
-  }
-  if (browserInstance) {
-    try {
-      await browserInstance.close();
-    } catch {}
-    browserInstance = null;
-  }
+  return mainPage;
 }
 
 export async function POST(req: NextRequest) {
@@ -52,14 +40,12 @@ export async function POST(req: NextRequest) {
 
     for (let i = 0; i < maxTries; i++) {
       try {
-        // solveCaptcha now accepts a Page, not Browser
         billData = await solveCaptcha(page, consumerNo);
         if (billData) break;
       } catch (e) {
         console.warn(`Attempt ${i + 1} failed:`, e);
       }
 
-      // Reload page to reset state before next attempt
       await page.reload({ waitUntil: "networkidle2" });
     }
 
