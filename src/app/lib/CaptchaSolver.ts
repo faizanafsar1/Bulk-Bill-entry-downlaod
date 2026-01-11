@@ -23,31 +23,31 @@ export async function solveCaptcha(page: any, consumerNo: string) {
 
       const result = await detectText(ssBase64);
       const captchaText = result.toUpperCase().replace(/\s+/g, "");
-      const cookies = await page.cookies();
-      const jsession = cookies.find((c: any) => c.name === "JSESSIONID");
-      const res = await fetch("https://www.sngpl.com.pk/viewbill", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Cookie: `${jsession?.name}=${jsession?.value}`,
-        },
-        body: `proc=viewbill&consumer=${consumerNo}&contype=NewCon&txtCaptcha=${captchaText}`,
-      });
-
-      // const res = await page.evaluate(
-      //   async (consumerNo: string, captchaText: string) => {
-      //     const res = await fetch("https://www.sngpl.com.pk/viewbill", {
-      //       method: "POST",
-      //       headers: {
-      //         "Content-Type": "application/x-www-form-urlencoded",
-      //       },
-      //       body: `proc=viewbill&consumer=${consumerNo}&contype=NewCon&txtCaptcha=${captchaText}`,
-      //     });
-      //     return await res.text();
+      // const cookies = await page.cookies();
+      // const jsession = cookies.find((c: any) => c.name === "JSESSIONID");
+      // const res = await fetch("https://www.sngpl.com.pk/viewbill", {
+      //   method: "POST",
+      //   headers: {
+      //     "Content-Type": "application/x-www-form-urlencoded",
+      //     Cookie: `${jsession?.name}=${jsession?.value}`,
       //   },
-      //   consumerNo,
-      //   captchaText
-      // );
+      //   body: `proc=viewbill&consumer=${consumerNo}&contype=NewCon&txtCaptcha=${captchaText}`,
+      // });
+
+      const res = await page.evaluate(
+        async (consumerNo: string, captchaText: string) => {
+          const res = await fetch("https://www.sngpl.com.pk/viewbill", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: `proc=viewbill&consumer=${consumerNo}&contype=NewCon&txtCaptcha=${captchaText}`,
+          });
+          return await res.text();
+        },
+        consumerNo,
+        captchaText
+      );
 
       if (res.ok) {
         const text = await res.text();
