@@ -71,7 +71,7 @@ export default function GetGasBillPage() {
       const img = doc.querySelector("body > div.sheet > img");
       if (img) {
         // Replace the src with your new URL
-        (img as HTMLImageElement).src = "https://www.sngpl.com.pk/images/billImages/BillPrintV25-7.jpeg";
+        (img as HTMLImageElement).src = "/assets/images/BillPrintV25-7.jpeg";
       }
 
       // Serialize the updated DOM back to a string
