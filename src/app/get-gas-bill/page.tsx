@@ -64,10 +64,14 @@ export default function GetGasBillPage() {
 
   const handlePrintBill = () => {
     if (billData) {
+      const updatedBillData = billData.replace(
+        /(<body[^>]*>\s*<div class="sheet"[^>]*>\s*<img\s+src=")[^"]*(")/,
+        `$1https://www.sngpl.com.pk/images/billImages/BillPrintV25-7.jpeg$2`
+      );
       const printWindow = window.open("", "_blank");
       if (printWindow) {
         printWindow.document.open();
-        printWindow.document.write(`${billData} `);
+        printWindow.document.write(`${updatedBillData}`);
         printWindow.document.close();
         printWindow.focus();
       }
