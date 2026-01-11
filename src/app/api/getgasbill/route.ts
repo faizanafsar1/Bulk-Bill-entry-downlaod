@@ -21,8 +21,7 @@ async function getBrowserAndPage(): Promise<Page> {
   return mainPage;
 }
 
-// You can optionally create a cleanup function to close browser when needed
-export async function cleanup() {
+async function cleanup() {
   if (mainPage) {
     try {
       await mainPage.close();
