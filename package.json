@@ -19,6 +19,7 @@
     "@tensorflow/tfjs": "^4.22.0",
     "next": "^15.1.0",
     "opencv.js": "^1.2.1",
+    "puppeteer": "^24.34.0",
     "puppeteer-core": "^24.34.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

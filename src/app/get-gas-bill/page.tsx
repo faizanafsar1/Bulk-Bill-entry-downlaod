@@ -36,7 +36,7 @@ export default function GetGasBillPage() {
     setBillData(null);
 
     try {
-      await showStepwiseProgress();
+      showStepwiseProgress();
 
       const res = await fetch("/api/getgasbill", {
         method: "POST",

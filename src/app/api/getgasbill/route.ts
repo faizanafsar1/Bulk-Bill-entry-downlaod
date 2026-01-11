@@ -5,17 +5,19 @@ import { solveCaptcha } from "../../lib/CaptchaSolver";
 
 let browserInstance: any = null;
 let mainPage: any = null;
+const isVercel = !!process.env.VERCEL;
+
+const localChromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
 async function getBrowserAndPage(): Promise<any> {
+  const executablePath = isVercel ? await chromium.executablePath() : localChromePath;
   if (!browserInstance) {
     browserInstance = await puppeteer.launch({
-      headless: true, // set false for debugging
-      args: chromium.args,
-      executablePath: await chromium.executablePath(),
-      defaultViewport: null,
+      headless: true,
+      args: isVercel ? chromium.args : [],
+      executablePath: executablePath,
     });
   }
-
   if (!mainPage) {
     const pages = await browserInstance.pages();
     mainPage = pages.length > 0 ? pages[0] : await browserInstance.newPage();
