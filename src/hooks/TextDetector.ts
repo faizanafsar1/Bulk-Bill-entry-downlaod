@@ -1,10 +1,6 @@
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "";
-import img from "../../public/assets/images/captcha-image.jpg";
-import sharp from "sharp";
 import path from "path";
-// import cv from "opencv4nodejs";
-import fs from "fs";
-import { execFile } from "child_process";
+
 async function imageUrlToBase64(imageUrl: string): Promise<string> {
   const response = await fetch(imageUrl);
   const blob = await response.blob();
@@ -47,13 +43,6 @@ async function testOCR() {
   const inputPath = path.join(process.cwd(), "public", "assets", "images", "captcha-image.jpg");
 
   const outputPath = path.join(process.cwd(), "public", "assets", "images", "captcha-enhanced.jpg");
-  const scriptPath = path.join(process.cwd(), "scripts", "enhance.py");
-  await new Promise((resolve, reject) => {
-    execFile("python", [scriptPath, inputPath, outputPath], (error) => {
-      if (error) reject(error);
-      else resolve(true);
-    });
-  });
 }
 
 // async function testOCR() {
