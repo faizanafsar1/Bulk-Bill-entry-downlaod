@@ -9,7 +9,7 @@ let mainPage: Page | null = null;
 async function getBrowserAndPage(): Promise<Page> {
   if (!browserInstance) {
     browserInstance = await puppeteer.launch({
-      headless: false, // set false for debugging
+      headless: true, // set false for debugging
       args: ["--start-maximized"],
       defaultViewport: null,
     });
