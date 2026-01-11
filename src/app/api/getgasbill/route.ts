@@ -9,7 +9,7 @@ let mainPage: any = null;
 async function getBrowserAndPage(): Promise<any> {
   if (!browserInstance) {
     browserInstance = await puppeteer.launch({
-      headless: false, // set false for debugging
+      headless: true, // set false for debugging
       args: chromium.args,
       executablePath: await chromium.executablePath(),
       defaultViewport: null,
@@ -33,22 +33,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Consumer number not provided" }, { status: 400 });
     }
 
-    const browser = await getBrowserAndPage();
+    const page = await getBrowserAndPage();
 
-    const tasks = Array.from({ length: 8 }).map(async () => {
-      const page = await browser.newPage();
-      // No page.close() here as requested
-      const result = await solveCaptcha(page, consumerNo);
-      if (!result) throw new Error("No result");
-      return result;
-    });
+    const maxTries = 10;
+    let billData: any = null;
 
-    let billData = null;
-    try {
-      billData = await Promise.any(tasks);
-    } catch (error) {
-      return NextResponse.json({ error: "Failed to solve captcha after all attempts" }, { status: 400 });
+    for (let i = 0; i < maxTries; i++) {
+      try {
+        billData = await solveCaptcha(page, consumerNo);
+        if (billData) break;
+      } catch (e) {
+        console.warn(`Attempt ${i + 1} failed:`, e);
+      }
+
+      await page.reload({ waitUntil: "networkidle2" });
     }
+
+    if (!billData) {
+      return NextResponse.json({ error: "Failed to solve captcha after maximum attempts" }, { status: 400 });
+    }
+
     return NextResponse.json({
       message: "Form submitted successfully",
       billData,
