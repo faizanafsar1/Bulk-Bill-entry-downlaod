@@ -59,7 +59,7 @@ async function searchNumber(
   page: Page,
   number: string,
   searchUrl: string
-): Promise<{ success: boolean; number: string; amount?: number; extractedText?: string; error?: string }> {
+): Promise<{ success: boolean; number: string; html?: string; amount?: number; extractedText?: string; error?: string }> {
   try {
     // Set user agent to avoid blocking
     await page.setUserAgent(
@@ -157,6 +157,12 @@ async function searchNumber(
     });
     console.log(`[${number}] Content element found`);
     
+    // Get full HTML of the page
+    const fullHTML = await page.content();
+    console.log(`[Number: ${number}] Retrieved full HTML (${fullHTML.length} characters)`);
+    
+    // COMMENTED OUT - Original extraction logic
+    /*
     // Extract innerHTML from element with class "nestedtd2width content"
     const extractedText = await page.evaluate(() => {
       const labelTd = [...document.querySelectorAll("td")]
@@ -177,8 +183,9 @@ async function searchNumber(
       const cleanedText = extractedText.replace(/,/g, "").replace(/[^\d.]/g, "");
       amount = parseFloat(cleanedText) || 0;
     }
+    */
 
-    return { success: true, number, extractedText, amount };
+    return { success: true, number, html: fullHTML };
   } catch (error: any) {
     const errorMessage = error.message || "Search failed";
     
@@ -253,13 +260,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       });
     });
 
-    // Initialize browsers - we'll reuse them for retries
-    // Limit to max 5 browsers on Vercel to avoid memory/timeout issues
-    const maxBrowsers = isVercel 
-      ? Math.min(numbers.length, 5) 
-      : Math.min(numbers.length, 10);
+    // Initialize browsers - For now, just one browser for HTML check
+    const maxBrowsers = 1;
     
-    console.log(`Initializing ${maxBrowsers} browsers for ${numbers.length} bills (isVercel: ${isVercel})`);
+    console.log(`Initializing ${maxBrowsers} browser for HTML check (isVercel: ${isVercel})`);
     await initializeBrowsers(maxBrowsers);
     
     // Verify pages are available
@@ -369,6 +373,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
     */
 
+    // COMMENTED OUT - Original processing logic
+    /*
     // Single pass processing (no retries)
     console.log(`Processing ${numbers.length} bills in single pass`);
     const allBills = Array.from(billResults.keys());
@@ -431,7 +437,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         }
       }
     });
+    */
 
+    // TEMPORARY: Process only first bill and return HTML
+    console.log(`Processing first bill only for HTML check: ${numbers[0]}`);
+    const firstNumber = numbers[0];
+    const page = pages.get(0);
+    
+    if (!page) {
+      throw new Error("No page available");
+    }
+    
+    const result = await searchNumber(page, firstNumber, searchUrl);
+    
+    if (!result.success || !result.html) {
+      return NextResponse.json({
+        success: false,
+        error: result.error || "Failed to get HTML",
+        number: firstNumber,
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      number: firstNumber,
+      html: result.html,
+      message: "HTML retrieved successfully",
+    });
+
+    // COMMENTED OUT - Original return logic
+    /*
     // Convert map to array for response
     const results = Array.from(billResults.values());
 
@@ -480,6 +515,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         })),
       },
     });
+    */
   } catch (err: any) {
     const elapsed = Date.now() - startTime;
     console.error("Error processing file:", {
