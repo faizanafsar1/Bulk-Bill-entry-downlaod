@@ -17,7 +17,12 @@ export default function Navigation() {
       <Link href="/iesco" className={pathname === "/iesco" ? "font-bold" : ""}>
         IESCO Bill Scanner
       </Link>
-      <Link href="/get-gas-bill">Get Gas Bill</Link>
+      <Link href="/get-gas-bill" className={pathname === "/get-gas-bill" ? "font-bold" : ""}>
+        Get Gas Bill
+      </Link>
+      <Link href="/calculate-amount" className={pathname === "/calculate-amount" ? "font-bold" : ""}>
+        Calculate Amount
+      </Link>
     </nav>
   );
 }

@@ -104,9 +104,8 @@ export default function GetGasBillPage() {
         <button
           type="submit"
           disabled={loading}
-          className={`px-6 py-2 rounded-lg transition ${
-            loading ? "bg-gray-400 cursor-not-allowed" : "bg-teal-600 hover:bg-teal-700 text-white"
-          }`}
+          className={`px-6 py-2 rounded-lg transition ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-teal-600 hover:bg-teal-700 text-white"
+            }`}
         >
           {loading ? "Submitting..." : "Submit"}
         </button>

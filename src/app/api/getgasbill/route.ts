@@ -1,66 +1,83 @@
 import { NextRequest, NextResponse } from "next/server";
-import puppeteer from "puppeteer-core";
+import puppeteer, { Browser, Page } from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
 import { solveCaptcha } from "../../lib/CaptchaSolver";
 
-let browserInstance: any = null;
-let mainPage: any = null;
 const isVercel = !!process.env.VERCEL;
-
 const localChromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
-async function getBrowserAndPage(): Promise<any> {
-  const executablePath = isVercel ? await chromium.executablePath() : localChromePath;
-  if (!browserInstance) {
-    browserInstance = await puppeteer.launch({
-      headless: true,
-      args: isVercel ? chromium.args : [],
-      executablePath: executablePath,
-    });
-  }
-  if (!mainPage) {
-    const pages = await browserInstance.pages();
-    mainPage = pages.length > 0 ? pages[0] : await browserInstance.newPage();
-  }
+// Global stores (persist across requests)
+const browserInstances: Map<number, Browser> = new Map();
+const pages: Map<number, Page> = new Map();
 
-  return mainPage;
+async function launchBrowserInstance(): Promise<Browser> {
+  const executablePath = isVercel ? await chromium.executablePath() : localChromePath;
+  return puppeteer.launch({
+    headless: false,
+    args: isVercel ? chromium.args : [],
+    executablePath,
+  });
 }
 
-export async function POST(req: NextRequest) {
+async function initializeBrowsers(): Promise<void> {
+  if (browserInstances.size > 0) {
+    // Just refresh existing pages
+    await Promise.all(
+      Array.from(pages.values()).map((page) =>
+        page.reload({ waitUntil: "networkidle2" })
+      )
+    );
+    return;
+  }
+
+  // Create exactly 10 browsers, 1 tab each
+  for (let i = 0; i < 10; i++) {
+    const browser = await launchBrowserInstance();
+    const page = await browser.newPage();
+    browserInstances.set(i, browser);
+    pages.set(i, page);
+  }
+}
+
+export async function POST(req: NextRequest): Promise<NextResponse> {
+
   try {
-    const body = await req.json();
-    const consumerNo: string = body.no;
+    const { no: consumerNo } = await req.json();
 
     if (!consumerNo) {
-      return NextResponse.json({ error: "Consumer number not provided" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Consumer number not provided" },
+        { status: 400 }
+      );
     }
 
-    const page = await getBrowserAndPage();
+    await initializeBrowsers();
 
-    const maxTries = 10;
-    let billData: any = null;
+    // ONE attempt per browser (10 total attempts max)
+    const results = await Promise.all(
+      Array.from(pages.values()).map((page) =>
+        solveCaptcha(page, consumerNo).catch(() => null)
+      )
+    );
 
-    for (let i = 0; i < maxTries; i++) {
-      try {
-        billData = await solveCaptcha(page, consumerNo);
-        if (billData) break;
-      } catch (e) {
-        console.warn(`Attempt ${i + 1} failed:`, e);
-      }
+    const success = results.find((r) => r !== null);
 
-      await page.reload({ waitUntil: "networkidle2" });
-    }
-
-    if (!billData) {
-      return NextResponse.json({ error: "Failed to solve captcha after maximum attempts" }, { status: 400 });
+    if (!success) {
+      return NextResponse.json(
+        { error: "Captcha failed on all browsers" },
+        { status: 400 }
+      );
     }
 
     return NextResponse.json({
-      message: "Form submitted successfully",
-      billData,
+      message: "Success",
+      billData: success,
     });
   } catch (err: any) {
-    console.error("Internal error:", err);
-    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+    console.error(err);
+    return NextResponse.json(
+      { error: err.message || "Internal error" },
+      { status: 500 }
+    );
   }
 }
