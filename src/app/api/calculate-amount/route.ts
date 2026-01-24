@@ -13,8 +13,21 @@ async function launchBrowserInstance(): Promise<Browser> {
   const executablePath = isVercel ? await chromium.executablePath() : localChromePath;
   return puppeteer.launch({
     headless: true,
-    args: isVercel ? chromium.args : [],
+    args: isVercel 
+      ? [
+          ...chromium.args,
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--no-zygote",
+          "--single-process",
+          "--disable-gpu",
+        ]
+      : [],
     executablePath,
+    timeout: isVercel ? 30000 : 60000,
   });
 }
 
@@ -52,30 +65,101 @@ async function searchNumber(
   searchUrl: string
 ): Promise<{ success: boolean; number: string; amount?: number; extractedText?: string; error?: string }> {
   try {
-    // Navigate to search page
-    await page.goto(searchUrl, {
-      waitUntil: "domcontentloaded",
+    // Set user agent to avoid blocking
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    );
+    
+    // Set viewport
+    await page.setViewport({ width: 1920, height: 1080 });
+    
+    // Enable request interception to block unnecessary resources (faster loading)
+    await page.setRequestInterception(true);
+    page.removeAllListeners("request");
+    
+    page.on("request", (req) => {
+      const type = req.resourceType();
+      // Block CSS, fonts, media, and other non-essential resources
+      if (
+        type === "stylesheet" ||
+        type === "font" ||
+        type === "media" ||
+        type === "websocket" ||
+        req.url().includes("analytics") ||
+        req.url().includes("tracking")
+      ) {
+        req.abort();
+      } else {
+        // Add headers to requests
+        const headers = {
+          ...req.headers(),
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Accept-Encoding": "gzip, deflate, br",
+          "Connection": "keep-alive",
+          "Upgrade-Insecure-Requests": "1",
+        };
+        req.continue({ headers });
+      }
     });
 
-    // Wait for search text box
-    await page.waitForSelector("#searchTextBox", { timeout: 10000 });
+    // Navigate to search page with longer timeout and retry logic
+    let navigationSuccess = false;
+    let lastError: Error | null = null;
+    
+    for (let retry = 0; retry < 3; retry++) {
+      try {
+        await page.goto(searchUrl, {
+          waitUntil: "domcontentloaded",
+          timeout: isVercel ? 30000 : 60000, // Increased timeout for Vercel
+        });
+        navigationSuccess = true;
+        break;
+      } catch (navError: any) {
+        lastError = navError;
+        console.log(`[${number}] Navigation attempt ${retry + 1} failed:`, navError.message);
+        if (retry < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+    }
+    
+    if (!navigationSuccess) {
+      throw new Error(`Failed to navigate after 3 attempts: ${lastError?.message || "Connection timeout"}`);
+    }
 
-    // Fill the search text box
-    await page.type("#searchTextBox", number, { delay: 100 });
+    // Wait for search text box with retry
+    await page.waitForSelector("#searchTextBox", { 
+      timeout: isVercel ? 20000 : 30000,
+      visible: true 
+    });
+
+    // Clear and fill the search text box
+    await page.click("#searchTextBox", { clickCount: 3 }); // Select all
+    await page.type("#searchTextBox", number, { delay: 50 });
 
     // Wait for and click submit button
-    await page.waitForSelector("#btnSearch", { timeout: 5000 });
+    await page.waitForSelector("#btnSearch", { 
+      timeout: isVercel ? 15000 : 20000,
+      visible: true 
+    });
     await page.click("#btnSearch");
 
-    console.log("submit button clicked");
+    console.log(`[${number}] Submit button clicked`);
     
-    // Wait for the barcode element
-    await page.waitForSelector("#normal_bill_barcode", { timeout: 10000 });
-    console.log("barcode found");
+    // Wait for the barcode element with longer timeout on Vercel
+    await page.waitForSelector("#normal_bill_barcode", { 
+      timeout: isVercel ? 30000 : 40000,
+      visible: true 
+    });
+    console.log(`[${number}] Barcode found`);
     
     // Wait for the content element to appear
-    await page.waitForSelector(".nestedtd2width.content", { timeout: 10000 });
-    console.log("content element found");
+    await page.waitForSelector(".nestedtd2width.content", { 
+      timeout: isVercel ? 20000 : 30000,
+      visible: true 
+    });
+    console.log(`[${number}] Content element found`);
     
     // Extract innerHTML from element with class "nestedtd2width content"
     const extractedText = await page.evaluate(() => {
@@ -100,19 +184,37 @@ async function searchNumber(
 
     return { success: true, number, extractedText, amount };
   } catch (error: any) {
+    const errorMessage = error.message || "Search failed";
+    
+    // Check for specific connection errors
+    if (errorMessage.includes("ERR_CONNECTION_TIMED_OUT") || 
+        errorMessage.includes("net::ERR") ||
+        errorMessage.includes("Navigation timeout")) {
+      return {
+        success: false,
+        number,
+        error: `Connection timeout to ${searchUrl}. The server may be slow or unreachable from Vercel.`,
+      };
+    }
+    
     return {
       success: false,
       number,
-      error: error.message || "Search failed",
+      error: errorMessage,
     };
   }
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const startTime = Date.now();
+  const MAX_EXECUTION_TIME = isVercel ? 50000 : 120000; // 50s on Vercel, 120s locally
+  
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
     const searchUrl =  "https://bill.pitc.com.pk/iescobill";
+    
+    console.log("Calculate amount API called, isVercel:", isVercel);
 
     if (!file) {
       return NextResponse.json(
@@ -156,11 +258,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
 
     // Initialize browsers - we'll reuse them for retries
-    const maxBrowsers = Math.min(numbers.length, 10); // Use max 10 browsers for retries
+    // Limit to max 5 browsers on Vercel to avoid memory/timeout issues
+    const maxBrowsers = isVercel 
+      ? Math.min(numbers.length, 5) 
+      : Math.min(numbers.length, 10);
+    
+    console.log(`Initializing ${maxBrowsers} browsers for ${numbers.length} bills (isVercel: ${isVercel})`);
     await initializeBrowsers(maxBrowsers);
+    
+    // Verify pages are available
+    if (pages.size === 0) {
+      throw new Error("Failed to initialize browser pages");
+    }
+    console.log(`Successfully initialized ${pages.size} pages`);
 
     // Retry logic: Process bills with up to 3 attempts
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    // On Vercel, limit to 2 attempts to avoid timeout
+    const maxAttempts = isVercel ? 2 : 3;
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       // Get bills that need retry (failed or zero amount that haven't succeeded yet)
       const billsToRetry = Array.from(billResults.entries())
         .filter(([_, result]) => {
@@ -174,7 +290,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         break; // No more bills to retry
       }
 
-      console.log(`Attempt ${attempt}: Processing ${billsToRetry.length} bills`);
+      console.log(`Attempt ${attempt}/${maxAttempts}: Processing ${billsToRetry.length} bills`);
 
       // Process all bills in batches using available browsers
       const batchSize = maxBrowsers;
@@ -190,15 +306,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             if (!page) {
               return { number, success: false, error: "No page available" };
             }
-            return await searchNumber(page, number, searchUrl);
+            
+            try {
+              // Clear any existing content and reset page state
+              await page.goto("about:blank", { waitUntil: "domcontentloaded" });
+              return await searchNumber(page, number, searchUrl);
+            } catch (error: any) {
+              console.error(`Error processing ${number}:`, error);
+              return { 
+                number, 
+                success: false, 
+                error: error.message || "Page error" 
+              };
+            }
           })
         );
 
         allBatchResults.push(...batchResults);
 
-        // Small delay between batches
+        // Small delay between batches (shorter on Vercel)
         if (i + batchSize < billsToRetry.length) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          await new Promise((resolve) => setTimeout(resolve, isVercel ? 500 : 1000));
         }
       }
 
@@ -216,12 +344,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             if (amount > 0) {
               existing.status = "success";
             } else {
-              // If amount is 0, mark as zero only after 3 attempts
-              existing.status = attempt === 3 ? "zero" : "failed";
+              // If amount is 0, mark as zero only after max attempts
+              existing.status = attempt === maxAttempts ? "zero" : "failed";
             }
           } else {
             // Failed to extract or error occurred
-            existing.status = attempt === 3 ? "max_retries" : "failed";
+            existing.status = attempt === maxAttempts ? "max_retries" : "failed";
             if (result.error) {
               existing.extractedText = result.error;
             }
@@ -229,9 +357,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         }
       });
 
-      // Small delay between retry attempts
-      if (attempt < 3) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Small delay between retry attempts (shorter on Vercel)
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, isVercel ? 1000 : 2000));
+      }
+      
+      // Check execution time to avoid Vercel timeout
+      const elapsed = Date.now() - startTime;
+      if (elapsed > MAX_EXECUTION_TIME) {
+        console.log(`Execution time limit reached (${elapsed}ms), stopping retries`);
+        break;
       }
     }
 
@@ -284,9 +419,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     });
   } catch (err: any) {
-    console.error("Error processing file:", err);
+    const elapsed = Date.now() - startTime;
+    console.error("Error processing file:", {
+      error: err.message,
+      stack: err.stack,
+      elapsed: `${elapsed}ms`,
+      isVercel,
+    });
     return NextResponse.json(
-      { error: err.message || "Internal server error" },
+      { 
+        error: err.message || "Internal server error",
+        details: isVercel ? "Vercel execution error - check logs" : err.stack,
+      },
       { status: 500 }
     );
   }

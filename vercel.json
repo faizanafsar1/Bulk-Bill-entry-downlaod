@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "src/app/api/calculate-amount/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
