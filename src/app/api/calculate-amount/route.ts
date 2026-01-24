@@ -12,22 +12,9 @@ const pages: Map<number, Page> = new Map();
 async function launchBrowserInstance(): Promise<Browser> {
   const executablePath = isVercel ? await chromium.executablePath() : localChromePath;
   return puppeteer.launch({
-    headless: true,
-    args: isVercel 
-      ? [
-          ...chromium.args,
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-accelerated-2d-canvas",
-          "--no-first-run",
-          "--no-zygote",
-          "--single-process",
-          "--disable-gpu",
-        ]
-      : [],
+    headless: isVercel ? true : false, // Headless on Vercel, visible locally
+    args: isVercel ? chromium.args : [],
     executablePath,
-    timeout: isVercel ? 30000 : 60000,
   });
 }
 
@@ -52,11 +39,20 @@ async function initializeBrowsers(count: number): Promise<void> {
 
   // Create browsers according to count
   for (let i = 0; i < count; i++) {
-    const browser = await launchBrowserInstance();
-    const page = await browser.newPage();
-    browserInstances.set(i, browser);
-    pages.set(i, page);
+    try {
+      console.log(`Creating browser instance ${i + 1}/${count}`);
+      const browser = await launchBrowserInstance();
+      const page = await browser.newPage();
+      browserInstances.set(i, browser);
+      pages.set(i, page);
+      console.log(`Browser instance ${i + 1} created successfully`);
+    } catch (error: any) {
+      console.error(`Failed to create browser instance ${i + 1}:`, error);
+      throw new Error(`Failed to initialize browser ${i + 1}: ${error.message}`);
+    }
   }
+  
+  console.log(`Successfully initialized ${browserInstances.size} browser instances`);
 }
 
 async function searchNumber(
@@ -274,6 +270,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Retry logic: Process bills with up to 3 attempts
     // On Vercel, limit to 2 attempts to avoid timeout
+    // COMMENTED OUT FOR NOW - Single pass processing
+    /*
     const maxAttempts = isVercel ? 2 : 3;
     
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -308,8 +306,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             }
             
             try {
-              // Clear any existing content and reset page state
-              await page.goto("about:blank", { waitUntil: "domcontentloaded" });
+              // Use page directly (same approach as getgasbill route)
+              // The searchNumber function will handle navigation
               return await searchNumber(page, number, searchUrl);
             } catch (error: any) {
               console.error(`Error processing ${number}:`, error);
@@ -369,6 +367,70 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         break;
       }
     }
+    */
+
+    // Single pass processing (no retries)
+    console.log(`Processing ${numbers.length} bills in single pass`);
+    const allBills = Array.from(billResults.keys());
+    const batchSize = maxBrowsers;
+    const allResults: Array<{ success: boolean; number: string; amount?: number; extractedText?: string; error?: string }> = [];
+
+    for (let i = 0; i < allBills.length; i += batchSize) {
+      const batch = allBills.slice(i, i + batchSize);
+      
+      const batchResults = await Promise.all(
+        batch.map(async (number, index) => {
+          const pageIndex = index % maxBrowsers;
+          const page = pages.get(pageIndex);
+          if (!page) {
+            return { number, success: false, error: "No page available" };
+          }
+          
+          try {
+            return await searchNumber(page, number, searchUrl);
+          } catch (error: any) {
+            console.error(`Error processing ${number}:`, error);
+            return { 
+              number, 
+              success: false, 
+              error: error.message || "Page error" 
+            };
+          }
+        })
+      );
+
+      allResults.push(...batchResults);
+
+      // Small delay between batches
+      if (i + batchSize < allBills.length) {
+        await new Promise((resolve) => setTimeout(resolve, isVercel ? 500 : 1000));
+      }
+    }
+
+    // Update results map (single attempt)
+    allResults.forEach((result) => {
+      const existing = billResults.get(result.number);
+      if (existing) {
+        existing.attempts = 1;
+        
+        if (result.success && "amount" in result) {
+          const amount = result.amount || 0;
+          existing.amount = amount;
+          existing.extractedText = result.extractedText;
+          
+          if (amount > 0) {
+            existing.status = "success";
+          } else {
+            existing.status = "zero";
+          }
+        } else {
+          existing.status = "failed";
+          if (result.error) {
+            existing.extractedText = result.error;
+          }
+        }
+      }
+    });
 
     // Convert map to array for response
     const results = Array.from(billResults.values());
