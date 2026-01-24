@@ -2,6 +2,9 @@
   "functions": {
     "src/app/api/calculate-amount/route.ts": {
       "maxDuration": 60
+    },
+    "api/*.js": {
+      "region": "bom1"   
     }
   }
 }
