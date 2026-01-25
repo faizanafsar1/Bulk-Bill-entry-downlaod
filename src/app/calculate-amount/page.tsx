@@ -109,31 +109,6 @@ export default function CalculateAmountPage() {
                 </div>
             )}
 
-            {result && result.html && (
-                <div className="mt-6 p-6 bg-white rounded-lg shadow-lg max-w-6xl w-full space-y-6">
-                    <h2 className="text-2xl font-bold mb-4 text-center">Page HTML Preview</h2>
-                    <div className="mb-4">
-                        <p className="text-sm text-gray-600">Number: <span className="font-semibold">{result.number}</span></p>
-                    </div>
-                    <div className="border rounded-lg overflow-hidden">
-                        <iframe
-                            srcDoc={result.html}
-                            className="w-full h-[800px] border-0"
-                            title="HTML Preview"
-                            sandbox="allow-same-origin allow-scripts"
-                        />
-                    </div>
-                    <details className="mt-4">
-                        <summary className="cursor-pointer text-sm font-medium text-gray-700 hover:text-gray-900">
-                            View Raw HTML
-                        </summary>
-                        <pre className="mt-2 p-4 bg-gray-100 rounded text-xs overflow-auto max-h-96">
-                            {result.html}
-                        </pre>
-                    </details>
-                </div>
-            )}
-
             {result && result.summary && (
                 <div className="mt-6 p-6 bg-white rounded-lg shadow-lg max-w-3xl w-full space-y-6">
                     <h2 className="text-2xl font-bold mb-4 text-center">Calculation Summary</h2>

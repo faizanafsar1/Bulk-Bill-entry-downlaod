@@ -59,7 +59,7 @@ async function searchNumber(
   page: Page,
   number: string,
   searchUrl: string
-): Promise<{ success: boolean; number: string; html?: string; amount?: number; extractedText?: string; error?: string }> {
+): Promise<{ success: boolean; number: string; amount?: number; extractedText?: string; error?: string }> {
   try {
     // Set user agent to avoid blocking
     await page.setUserAgent(
@@ -157,12 +157,6 @@ async function searchNumber(
     });
     console.log(`[${number}] Content element found`);
     
-    // Get full HTML of the page
-    const fullHTML = await page.content();
-    console.log(`[Number: ${number}] Retrieved full HTML (${fullHTML.length} characters)`);
-    
-    // COMMENTED OUT - Original extraction logic
-    /*
     // Extract innerHTML from element with class "nestedtd2width content"
     const extractedText = await page.evaluate(() => {
       const labelTd = [...document.querySelectorAll("td")]
@@ -183,9 +177,8 @@ async function searchNumber(
       const cleanedText = extractedText.replace(/,/g, "").replace(/[^\d.]/g, "");
       amount = parseFloat(cleanedText) || 0;
     }
-    */
 
-    return { success: true, number, html: fullHTML };
+    return { success: true, number, extractedText, amount };
   } catch (error: any) {
     const errorMessage = error.message || "Search failed";
     
@@ -260,10 +253,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       });
     });
 
-    // Initialize browsers - For now, just one browser for HTML check
-    const maxBrowsers = 1;
+    // Initialize browsers - we'll reuse them for retries
+    // Limit to max 5 browsers on Vercel to avoid memory/timeout issues
+    const maxBrowsers = isVercel 
+      ? Math.min(numbers.length, 5) 
+      : Math.min(numbers.length, 10);
     
-    console.log(`Initializing ${maxBrowsers} browser for HTML check (isVercel: ${isVercel})`);
+    console.log(`Initializing ${maxBrowsers} browsers for ${numbers.length} bills (isVercel: ${isVercel})`);
     await initializeBrowsers(maxBrowsers);
     
     // Verify pages are available
@@ -272,109 +268,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
     console.log(`Successfully initialized ${pages.size} pages`);
 
-    // Retry logic: Process bills with up to 3 attempts
-    // On Vercel, limit to 2 attempts to avoid timeout
-    // COMMENTED OUT FOR NOW - Single pass processing
-    /*
-    const maxAttempts = isVercel ? 2 : 3;
-    
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      // Get bills that need retry (failed or zero amount that haven't succeeded yet)
-      const billsToRetry = Array.from(billResults.entries())
-        .filter(([_, result]) => {
-          // Retry if: failed, or has zero amount and hasn't reached max attempts yet
-          return (result.status === "failed" && result.attempts < attempt) ||
-                 (result.amount === 0 && result.status !== "success" && result.attempts < attempt);
-        })
-        .map(([number, _]) => number);
-
-      if (billsToRetry.length === 0) {
-        break; // No more bills to retry
-      }
-
-      console.log(`Attempt ${attempt}/${maxAttempts}: Processing ${billsToRetry.length} bills`);
-
-      // Process all bills in batches using available browsers
-      const batchSize = maxBrowsers;
-      const allBatchResults: Array<{ success: boolean; number: string; amount?: number; extractedText?: string; error?: string }> = [];
-
-      for (let i = 0; i < billsToRetry.length; i += batchSize) {
-        const batch = billsToRetry.slice(i, i + batchSize);
-        
-        const batchResults = await Promise.all(
-          batch.map(async (number, index) => {
-            const pageIndex = index % maxBrowsers;
-            const page = pages.get(pageIndex);
-            if (!page) {
-              return { number, success: false, error: "No page available" };
-            }
-            
-            try {
-              // Use page directly (same approach as getgasbill route)
-              // The searchNumber function will handle navigation
-              return await searchNumber(page, number, searchUrl);
-            } catch (error: any) {
-              console.error(`Error processing ${number}:`, error);
-              return { 
-                number, 
-                success: false, 
-                error: error.message || "Page error" 
-              };
-            }
-          })
-        );
-
-        allBatchResults.push(...batchResults);
-
-        // Small delay between batches (shorter on Vercel)
-        if (i + batchSize < billsToRetry.length) {
-          await new Promise((resolve) => setTimeout(resolve, isVercel ? 500 : 1000));
-        }
-      }
-
-      // Update results map
-      allBatchResults.forEach((result) => {
-        const existing = billResults.get(result.number);
-        if (existing) {
-          existing.attempts = attempt;
-          
-          if (result.success && "amount" in result) {
-            const amount = result.amount || 0;
-            existing.amount = amount;
-            existing.extractedText = result.extractedText;
-            
-            if (amount > 0) {
-              existing.status = "success";
-            } else {
-              // If amount is 0, mark as zero only after max attempts
-              existing.status = attempt === maxAttempts ? "zero" : "failed";
-            }
-          } else {
-            // Failed to extract or error occurred
-            existing.status = attempt === maxAttempts ? "max_retries" : "failed";
-            if (result.error) {
-              existing.extractedText = result.error;
-            }
-          }
-        }
-      });
-
-      // Small delay between retry attempts (shorter on Vercel)
-      if (attempt < maxAttempts) {
-        await new Promise((resolve) => setTimeout(resolve, isVercel ? 1000 : 2000));
-      }
-      
-      // Check execution time to avoid Vercel timeout
-      const elapsed = Date.now() - startTime;
-      if (elapsed > MAX_EXECUTION_TIME) {
-        console.log(`Execution time limit reached (${elapsed}ms), stopping retries`);
-        break;
-      }
-    }
-    */
-
-    // COMMENTED OUT - Original processing logic
-    /*
     // Single pass processing (no retries)
     console.log(`Processing ${numbers.length} bills in single pass`);
     const allBills = Array.from(billResults.keys());
@@ -437,36 +330,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         }
       }
     });
-    */
 
-    // TEMPORARY: Process only first bill and return HTML
-    console.log(`Processing first bill only for HTML check: ${numbers[0]}`);
-    const firstNumber = numbers[0];
-    const page = pages.get(0);
-    
-    if (!page) {
-      throw new Error("No page available");
-    }
-    
-    const result = await searchNumber(page, firstNumber, searchUrl);
-    
-    if (!result.success || !result.html) {
-      return NextResponse.json({
-        success: false,
-        error: result.error || "Failed to get HTML",
-        number: firstNumber,
-      });
-    }
-
-    return NextResponse.json({
-      success: true,
-      number: firstNumber,
-      html: result.html,
-      message: "HTML retrieved successfully",
-    });
-
-    // COMMENTED OUT - Original return logic
-    /*
     // Convert map to array for response
     const results = Array.from(billResults.values());
 
@@ -515,7 +379,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         })),
       },
     });
-    */
   } catch (err: any) {
     const elapsed = Date.now() - startTime;
     console.error("Error processing file:", {
