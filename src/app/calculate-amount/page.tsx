@@ -30,7 +30,6 @@ export default function CalculateAmountPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-
         if (!file) {
             setMessage("Please select a file first.");
             return;
@@ -238,10 +237,10 @@ export default function CalculateAmountPage() {
                                             <div
                                                 key={bill.number}
                                                 className={`p-3 rounded-lg border animate-pulse ${isSuccess
-                                                        ? "bg-green-50 border-green-300"
-                                                        : isZero
-                                                            ? "bg-yellow-50 border-yellow-300"
-                                                            : "bg-red-50 border-red-300"
+                                                    ? "bg-green-50 border-green-300"
+                                                    : isZero
+                                                        ? "bg-yellow-50 border-yellow-300"
+                                                        : "bg-red-50 border-red-300"
                                                     }`}
                                             >
                                                 <div className="flex items-center justify-between">
@@ -261,10 +260,10 @@ export default function CalculateAmountPage() {
                                                             Rs. {bill.amount.toLocaleString()}
                                                         </span>
                                                         <span className={`px-2 py-1 rounded text-xs font-medium ${isSuccess
-                                                                ? "bg-green-200 text-green-800"
-                                                                : isZero
-                                                                    ? "bg-yellow-200 text-yellow-800"
-                                                                    : "bg-red-200 text-red-800"
+                                                            ? "bg-green-200 text-green-800"
+                                                            : isZero
+                                                                ? "bg-yellow-200 text-yellow-800"
+                                                                : "bg-red-200 text-red-800"
                                                             }`}>
                                                             {isSuccess ? "✓" : isZero ? "⚠" : "✗"}
                                                         </span>

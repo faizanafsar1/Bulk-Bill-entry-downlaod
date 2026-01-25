@@ -35,6 +35,8 @@ export default function GetGasBillPage() {
     setShowPrintButton(false);
     setBillData(null);
 
+
+
     try {
       showStepwiseProgress();
 
