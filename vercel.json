@@ -1,7 +1,4 @@
 {
-  "functions": {
-    "api/**/*.js": {
-      "regions": ["bom1"]
-    }
-  }
+ "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functionFailoverRegions": ["bom1"]
 }
