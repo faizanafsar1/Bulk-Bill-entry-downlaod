@@ -190,38 +190,48 @@ async function searchNumber(
   }
 }
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+// Helper function to send SSE message
+function sendSSE(controller: ReadableStreamDefaultController, event: string, data: any) {
+  const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  controller.enqueue(new TextEncoder().encode(message));
+}
+
+export async function POST(req: NextRequest): Promise<Response> {
   const startTime = Date.now();
   const MAX_EXECUTION_TIME = isVercel ? 50000 : 120000; // 50s on Vercel, 120s locally
   
-  try {
-    const formData = await req.formData();
-    const file = formData.get("file") as File;
-    const searchUrl =  "https://bill.pitc.com.pk/iescobill";
-    
-    console.log("Calculate amount API called, isVercel:", isVercel);
+  // Create a ReadableStream for SSE
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        const formData = await req.formData();
+        const file = formData.get("file") as File;
+        const searchUrl =  "https://bill.pitc.com.pk/iescobill";
+        
+        console.log("Calculate amount API called, isVercel:", isVercel);
+        
+        // Send initial connection message
+        sendSSE(controller, "connected", { message: "Connected to server" });
 
-    if (!file) {
-      return NextResponse.json(
-        { error: "No file provided" },
-        { status: 400 }
-      );
-    }
+        if (!file) {
+          sendSSE(controller, "error", { error: "No file provided" });
+          controller.close();
+          return;
+        }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const data = Buffer.from(arrayBuffer).toString("utf8");
-    const body = data.split("\n");
-    const lines = body.slice(1);
-    const numbers = lines
-      .map((item) => item.split(",")[2])
-      .filter((num) => num && num.trim() !== ""); // Filter out empty values
+        const arrayBuffer = await file.arrayBuffer();
+        const data = Buffer.from(arrayBuffer).toString("utf8");
+        const body = data.split("\n");
+        const lines = body.slice(1);
+        const numbers = lines
+          .map((item) => item.split(",")[2])
+          .filter((num) => num && num.trim() !== ""); // Filter out empty values
 
-    if (numbers.length === 0) {
-      return NextResponse.json(
-        { error: "No numbers found in file" },
-        { status: 400 }
-      );
-    }
+        if (numbers.length === 0) {
+          sendSSE(controller, "error", { error: "No numbers found in file" });
+          controller.close();
+          return;
+        }
 
     // Map to store numbers as IDs with their amounts
     const billResults = new Map<string, {
@@ -252,144 +262,228 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
     console.log(`Successfully initialized browser with 1 page`);
 
-    // Process bills sequentially (one at a time) with retry logic
-    console.log(`Processing ${numbers.length} bills sequentially`);
-    const allBills = Array.from(billResults.keys());
-
-    for (const number of allBills) {
-      const existing = billResults.get(number);
-      if (!existing) continue;
-
-      let result: { success: boolean; number: string; amount?: number; extractedText?: string; error?: string } | null = null;
-      let attempts = 0;
-      const maxAttempts = 3; // Initial attempt + 2 retries
-
-      // Try up to 3 times (initial + 2 retries)
-      while (attempts < maxAttempts) {
-        attempts++;
-        existing.attempts = attempts;
+        // Process bills sequentially (one at a time) with retry logic
+        console.log(`Processing ${numbers.length} bills sequentially`);
+        const allBills = Array.from(billResults.keys());
         
-        console.log(`[Attempt ${attempts}/${maxAttempts}] Processing number: ${number}`);
-        
-        try {
-          result = await searchNumber(page!, number, searchUrl);
-          
-          // Check if we need to retry: undefined amount, 0 amount, or error
-          const hasError = !result.success || !!result.error;
-          const hasInvalidAmount = result.amount === undefined || result.amount === 0;
-          const needsRetry = hasError || hasInvalidAmount;
-          
-          if (!needsRetry && result.amount && result.amount > 0) {
-            // Success with valid amount > 0
-            existing.amount = result.amount;
-            existing.extractedText = result.extractedText;
-            existing.status = "success";
-            console.log(`[${number}] Success: amount=${result.amount}`);
-            break;
-          } else {
-            // Need to retry or finalize result
-            if (attempts < maxAttempts) {
-              console.log(`[${number}] Retry needed (attempt ${attempts}): success=${result.success}, amount=${result.amount}, error=${result.error || 'none'}`);
-              // Small delay before retry
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-            } else {
-              // Max attempts reached - finalize result
-              existing.amount = result.amount || 0;
-              existing.extractedText = result.extractedText || result.error;
-              if (result.amount === 0 && result.success) {
-                existing.status = "zero";
+        // Send progress update
+        sendSSE(controller, "progress", { 
+          total: numbers.length, 
+          processed: 0,
+          message: `Starting to process ${numbers.length} bills`
+        });
+
+        for (let index = 0; index < allBills.length; index++) {
+          const number = allBills[index];
+          const existing = billResults.get(number);
+          if (!existing) continue;
+
+          // Send processing update
+          sendSSE(controller, "processing", {
+            index: index + 1,
+            total: allBills.length,
+            number: number,
+            message: `Processing bill ${index + 1} of ${allBills.length}: ${number}`
+          });
+
+          let result: { success: boolean; number: string; amount?: number; extractedText?: string; error?: string } | null = null;
+          let attempts = 0;
+          const maxAttempts = 3; // Initial attempt + 2 retries
+
+          // Try up to 3 times (initial + 2 retries)
+          while (attempts < maxAttempts) {
+            attempts++;
+            existing.attempts = attempts;
+            
+            console.log(`[Attempt ${attempts}/${maxAttempts}] Processing number: ${number}`);
+            
+            try {
+              result = await searchNumber(page!, number, searchUrl);
+              
+              // Check if we need to retry: undefined amount, 0 amount, or error
+              const hasError = !result.success || !!result.error;
+              const hasInvalidAmount = result.amount === undefined || result.amount === 0;
+              const needsRetry = hasError || hasInvalidAmount;
+              
+              if (!needsRetry && result.amount && result.amount > 0) {
+                // Success with valid amount > 0
+                existing.amount = result.amount;
+                existing.extractedText = result.extractedText;
+                existing.status = "success";
+                console.log(`[${number}] Success: amount=${result.amount}`);
+                
+                // Send success update
+                sendSSE(controller, "billUpdate", {
+                  number: number,
+                  amount: result.amount,
+                  status: "success",
+                  extractedText: result.extractedText,
+                  attempts: attempts,
+                  index: index + 1
+                });
+                break;
               } else {
-                existing.status = "failed";
+                // Need to retry or finalize result
+                if (attempts < maxAttempts) {
+                  console.log(`[${number}] Retry needed (attempt ${attempts}): success=${result.success}, amount=${result.amount}, error=${result.error || 'none'}`);
+                  
+                  // Send retry update
+                  sendSSE(controller, "retry", {
+                    number: number,
+                    attempt: attempts,
+                    maxAttempts: maxAttempts,
+                    message: `Retrying bill ${number} (attempt ${attempts}/${maxAttempts})`
+                  });
+                  
+                  // Small delay before retry
+                  await new Promise((resolve) => setTimeout(resolve, 1000));
+                } else {
+                  // Max attempts reached - finalize result
+                  existing.amount = result.amount || 0;
+                  existing.extractedText = result.extractedText || result.error;
+                  if (result.amount === 0 && result.success) {
+                    existing.status = "zero";
+                  } else {
+                    existing.status = "failed";
+                  }
+                  console.log(`[${number}] Max attempts reached: status=${existing.status}, amount=${existing.amount}`);
+                  
+                  // Send final update
+                  sendSSE(controller, "billUpdate", {
+                    number: number,
+                    amount: existing.amount,
+                    status: existing.status,
+                    extractedText: existing.extractedText,
+                    attempts: attempts,
+                    index: index + 1
+                  });
+                  break;
+                }
               }
-              console.log(`[${number}] Max attempts reached: status=${existing.status}, amount=${existing.amount}`);
-              break;
+            } catch (error: any) {
+              console.error(`[${number}] Error on attempt ${attempts}:`, error);
+              result = {
+                number,
+                success: false,
+                error: error.message || "Page error"
+              };
+              
+              if (attempts >= maxAttempts) {
+                // Max attempts reached, mark as failed
+                existing.status = "failed";
+                existing.extractedText = result.error;
+                existing.amount = 0;
+                
+                // Send final update
+                sendSSE(controller, "billUpdate", {
+                  number: number,
+                  amount: 0,
+                  status: "failed",
+                  extractedText: result.error,
+                  attempts: attempts,
+                  index: index + 1
+                });
+                break;
+              } else {
+                // Retry on next iteration
+                console.log(`[${number}] Will retry after error`);
+                sendSSE(controller, "retry", {
+                  number: number,
+                  attempt: attempts,
+                  maxAttempts: maxAttempts,
+                  message: `Retrying bill ${number} after error (attempt ${attempts}/${maxAttempts})`
+                });
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+              }
             }
           }
-        } catch (error: any) {
-          console.error(`[${number}] Error on attempt ${attempts}:`, error);
-          result = {
-            number,
-            success: false,
-            error: error.message || "Page error"
-          };
           
-          if (attempts >= maxAttempts) {
-            // Max attempts reached, mark as failed
-            existing.status = "failed";
-            existing.extractedText = result.error;
-            existing.amount = 0;
-            break;
-          } else {
-            // Retry on next iteration
-            console.log(`[${number}] Will retry after error`);
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          }
+          // Send progress update
+          sendSSE(controller, "progress", {
+            total: numbers.length,
+            processed: index + 1,
+            message: `Processed ${index + 1} of ${numbers.length} bills`
+          });
         }
+
+        // Convert map to array for response
+        const results = Array.from(billResults.values());
+
+        // Calculate statistics
+        const successCount = results.filter((r) => r.status === "success").length;
+        const failedCount = results.filter((r) => r.status === "failed" || r.status === "max_retries").length;
+        const successfulResults = results.filter((r) => r.status === "success");
+        const totalAmount = successfulResults.reduce((sum, r) => sum + r.amount, 0);
+        const calculatedBills = successfulResults.length;
+        const zeroAmountBills = results.filter((r) => r.amount === 0 || r.status === "zero");
+
+        // Send final summary
+        sendSSE(controller, "complete", {
+          success: true,
+          message: `Processed ${numbers.length} numbers`,
+          summary: {
+            totalBills: numbers.length,
+            calculatedBills: calculatedBills,
+            totalAmount: totalAmount,
+            zeroAmountBills: zeroAmountBills.map((r) => ({
+              number: r.number,
+              amount: r.amount,
+              extractedText: r.extractedText || "",
+              status: r.status,
+              attempts: r.attempts,
+            })),
+            failedBills: results
+              .filter((r) => r.status === "failed" || r.status === "max_retries")
+              .map((r) => ({
+                number: r.number,
+                amount: r.amount,
+                extractedText: r.extractedText || "Not correct after 3 attempts",
+                status: r.status,
+                attempts: r.attempts,
+              })),
+          },
+          results: {
+            total: numbers.length,
+            successful: successCount,
+            failed: failedCount,
+            details: results.map((r) => ({
+              number: r.number,
+              amount: r.amount,
+              extractedText: r.extractedText,
+              status: r.status,
+              attempts: r.attempts,
+            })),
+          },
+        });
+
+        // Close the stream
+        controller.close();
+      } catch (err: any) {
+        const elapsed = Date.now() - startTime;
+        console.error("Error processing file:", {
+          error: err.message,
+          stack: err.stack,
+          elapsed: `${elapsed}ms`,
+          isVercel,
+        });
+        
+        // Send error via SSE
+        sendSSE(controller, "error", {
+          error: err.message || "Internal server error",
+          details: isVercel ? "Vercel execution error - check logs" : err.stack,
+        });
+        
+        controller.close();
       }
-    }
+    },
+  });
 
-    // Convert map to array for response
-    const results = Array.from(billResults.values());
-
-    // Calculate statistics
-    const successCount = results.filter((r) => r.status === "success").length;
-    const failedCount = results.filter((r) => r.status === "failed" || r.status === "max_retries").length;
-    const successfulResults = results.filter((r) => r.status === "success");
-    const totalAmount = successfulResults.reduce((sum, r) => sum + r.amount, 0);
-    const calculatedBills = successfulResults.length;
-    const zeroAmountBills = results.filter((r) => r.amount === 0 || r.status === "zero");
-
-    return NextResponse.json({
-      success: true,
-      message: `Processed ${numbers.length} numbers`,
-      summary: {
-        totalBills: numbers.length,
-        calculatedBills: calculatedBills,
-        totalAmount: totalAmount,
-        zeroAmountBills: zeroAmountBills.map((r) => ({
-          number: r.number,
-          amount: r.amount,
-          extractedText: r.extractedText || "",
-          status: r.status,
-          attempts: r.attempts,
-        })),
-        failedBills: results
-          .filter((r) => r.status === "failed" || r.status === "max_retries")
-          .map((r) => ({
-            number: r.number,
-            amount: r.amount,
-            extractedText: r.extractedText || "Not correct after 3 attempts",
-            status: r.status,
-            attempts: r.attempts,
-          })),
-      },
-      results: {
-        total: numbers.length,
-        successful: successCount,
-        failed: failedCount,
-        details: results.map((r) => ({
-          number: r.number,
-          amount: r.amount,
-          extractedText: r.extractedText,
-          status: r.status,
-          attempts: r.attempts,
-        })),
-      },
-    });
-  } catch (err: any) {
-    const elapsed = Date.now() - startTime;
-    console.error("Error processing file:", {
-      error: err.message,
-      stack: err.stack,
-      elapsed: `${elapsed}ms`,
-      isVercel,
-    });
-    return NextResponse.json(
-      { 
-        error: err.message || "Internal server error",
-        details: isVercel ? "Vercel execution error - check logs" : err.stack,
-      },
-      { status: 500 }
-    );
-  }
+  // Return streaming response with SSE headers
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+    },
+  });
 }
