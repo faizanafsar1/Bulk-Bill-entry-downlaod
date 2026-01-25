@@ -396,6 +396,3 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 }
-export const config = {
-  regions: ['bom1']
-};
