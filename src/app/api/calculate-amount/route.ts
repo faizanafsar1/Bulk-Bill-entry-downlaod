@@ -5,9 +5,9 @@ import chromium from "@sparticuz/chromium";
 const isVercel = !!process.env.VERCEL;
 const localChromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
-// Global stores (persist across requests)
-const browserInstances: Map<number, Browser> = new Map();
-const pages: Map<number, Page> = new Map();
+// Global stores (persist across requests) - single browser instance
+let browserInstance: Browser | null = null;
+let page: Page | null = null;
 
 async function launchBrowserInstance(): Promise<Browser> {
   const executablePath = isVercel ? await chromium.executablePath() : localChromePath;
@@ -18,41 +18,30 @@ async function launchBrowserInstance(): Promise<Browser> {
   });
 }
 
-async function initializeBrowsers(count: number): Promise<void> {
-  // Close existing browsers if count is different
-  if (browserInstances.size !== count) {
-    // Close all existing browsers
-    await Promise.all(
-      Array.from(browserInstances.values()).map((browser) => browser.close())
-    );
-    browserInstances.clear();
-    pages.clear();
-  } else if (browserInstances.size > 0) {
-    // Just refresh existing pages
-    await Promise.all(
-      Array.from(pages.values()).map((page) =>
-        page.reload({ waitUntil: "networkidle2" })
-      )
-    );
-    return;
-  }
-
-  // Create browsers according to count
-  for (let i = 0; i < count; i++) {
+async function initializeBrowser(): Promise<void> {
+  // Create browser instance if it doesn't exist
+  if (!browserInstance) {
     try {
-      console.log(`Creating browser instance ${i + 1}/${count}`);
-      const browser = await launchBrowserInstance();
-      const page = await browser.newPage();
-      browserInstances.set(i, browser);
-      pages.set(i, page);
-      console.log(`Browser instance ${i + 1} created successfully`);
+      console.log(`Creating single browser instance`);
+      browserInstance = await launchBrowserInstance();
+      page = await browserInstance.newPage();
+      console.log(`Browser instance created successfully`);
     } catch (error: any) {
-      console.error(`Failed to create browser instance ${i + 1}:`, error);
-      throw new Error(`Failed to initialize browser ${i + 1}: ${error.message}`);
+      console.error(`Failed to create browser instance:`, error);
+      throw new Error(`Failed to initialize browser: ${error.message}`);
+    }
+  } else if (!page) {
+    // Browser exists but page doesn't, create a new page
+    try {
+      page = await browserInstance.newPage();
+      console.log(`Page created for existing browser`);
+    } catch (error: any) {
+      console.error(`Failed to create page:`, error);
+      throw new Error(`Failed to create page: ${error.message}`);
     }
   }
   
-  console.log(`Successfully initialized ${browserInstances.size} browser instances`);
+  console.log(`Browser ready with 1 page`);
 }
 
 async function searchNumber(
@@ -132,27 +121,27 @@ async function searchNumber(
 
     // Clear and fill the search text box
     await page.click("#searchTextBox", { clickCount: 3 }); // Select all
-    await page.type("#searchTextBox", number, { delay: 50 });
+    await page.type("#searchTextBox", number, );
 
     // Wait for and click submit button
     await page.waitForSelector("#btnSearch", { 
       timeout: isVercel ? 15000 : 20000,
       visible: true 
     });
-    await page.click("#btnSearch");
+    await page.click("#btnSearch", { delay: 10 });
 
     console.log(`[${number}] Submit button clicked`);
     
     // Wait for the barcode element with longer timeout on Vercel
     await page.waitForSelector("#normal_bill_barcode", { 
-      timeout: isVercel ? 30000 : 40000,
+      timeout: isVercel ? 3000 : 3000,
       visible: true 
     });
     console.log(`[${number}] Barcode found`);
     
     // Wait for the content element to appear
     await page.waitForSelector(".nestedtd2width.content", { 
-      timeout: isVercel ? 20000 : 30000,
+      timeout: isVercel ? 3000 : 3000,
       visible: true 
     });
     console.log(`[${number}] Content element found`);
@@ -253,83 +242,91 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       });
     });
 
-    // Initialize browsers - we'll reuse them for retries
-    // Limit to max 5 browsers on Vercel to avoid memory/timeout issues
-    const maxBrowsers = isVercel 
-      ? Math.min(numbers.length, 5) 
-      : Math.min(numbers.length, 10);
+    // Initialize single browser instance
+    console.log(`Initializing 1 browser for ${numbers.length} bills (isVercel: ${isVercel})`);
+    await initializeBrowser();
     
-    console.log(`Initializing ${maxBrowsers} browsers for ${numbers.length} bills (isVercel: ${isVercel})`);
-    await initializeBrowsers(maxBrowsers);
-    
-    // Verify pages are available
-    if (pages.size === 0) {
-      throw new Error("Failed to initialize browser pages");
+    // Verify page is available
+    if (!page) {
+      throw new Error("Failed to initialize browser page");
     }
-    console.log(`Successfully initialized ${pages.size} pages`);
+    console.log(`Successfully initialized browser with 1 page`);
 
-    // Single pass processing (no retries)
-    console.log(`Processing ${numbers.length} bills in single pass`);
+    // Process bills sequentially (one at a time) with retry logic
+    console.log(`Processing ${numbers.length} bills sequentially`);
     const allBills = Array.from(billResults.keys());
-    const batchSize = maxBrowsers;
-    const allResults: Array<{ success: boolean; number: string; amount?: number; extractedText?: string; error?: string }> = [];
 
-    for (let i = 0; i < allBills.length; i += batchSize) {
-      const batch = allBills.slice(i, i + batchSize);
-      
-      const batchResults = await Promise.all(
-        batch.map(async (number, index) => {
-          const pageIndex = index % maxBrowsers;
-          const page = pages.get(pageIndex);
-          if (!page) {
-            return { number, success: false, error: "No page available" };
-          }
-          
-          try {
-            return await searchNumber(page, number, searchUrl);
-          } catch (error: any) {
-            console.error(`Error processing ${number}:`, error);
-            return { 
-              number, 
-              success: false, 
-              error: error.message || "Page error" 
-            };
-          }
-        })
-      );
+    for (const number of allBills) {
+      const existing = billResults.get(number);
+      if (!existing) continue;
 
-      allResults.push(...batchResults);
+      let result: { success: boolean; number: string; amount?: number; extractedText?: string; error?: string } | null = null;
+      let attempts = 0;
+      const maxAttempts = 3; // Initial attempt + 2 retries
 
-      // Small delay between batches
-      if (i + batchSize < allBills.length) {
-        await new Promise((resolve) => setTimeout(resolve, isVercel ? 500 : 1000));
-      }
-    }
-
-    // Update results map (single attempt)
-    allResults.forEach((result) => {
-      const existing = billResults.get(result.number);
-      if (existing) {
-        existing.attempts = 1;
+      // Try up to 3 times (initial + 2 retries)
+      while (attempts < maxAttempts) {
+        attempts++;
+        existing.attempts = attempts;
         
-        if (result.success && "amount" in result) {
-          const amount = result.amount || 0;
-          existing.amount = amount;
-          existing.extractedText = result.extractedText;
+        console.log(`[Attempt ${attempts}/${maxAttempts}] Processing number: ${number}`);
+        
+        try {
+          result = await searchNumber(page!, number, searchUrl);
           
-          if (amount > 0) {
+          // Check if we need to retry: undefined amount, 0 amount, or error
+          const hasError = !result.success || !!result.error;
+          const hasInvalidAmount = result.amount === undefined || result.amount === 0;
+          const needsRetry = hasError || hasInvalidAmount;
+          
+          if (!needsRetry && result.amount && result.amount > 0) {
+            // Success with valid amount > 0
+            existing.amount = result.amount;
+            existing.extractedText = result.extractedText;
             existing.status = "success";
+            console.log(`[${number}] Success: amount=${result.amount}`);
+            break;
           } else {
-            existing.status = "zero";
+            // Need to retry or finalize result
+            if (attempts < maxAttempts) {
+              console.log(`[${number}] Retry needed (attempt ${attempts}): success=${result.success}, amount=${result.amount}, error=${result.error || 'none'}`);
+              // Small delay before retry
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            } else {
+              // Max attempts reached - finalize result
+              existing.amount = result.amount || 0;
+              existing.extractedText = result.extractedText || result.error;
+              if (result.amount === 0 && result.success) {
+                existing.status = "zero";
+              } else {
+                existing.status = "failed";
+              }
+              console.log(`[${number}] Max attempts reached: status=${existing.status}, amount=${existing.amount}`);
+              break;
+            }
           }
-        } else {
-          existing.status = "failed";
-          if (result.error) {
+        } catch (error: any) {
+          console.error(`[${number}] Error on attempt ${attempts}:`, error);
+          result = {
+            number,
+            success: false,
+            error: error.message || "Page error"
+          };
+          
+          if (attempts >= maxAttempts) {
+            // Max attempts reached, mark as failed
+            existing.status = "failed";
             existing.extractedText = result.error;
+            existing.amount = 0;
+            break;
+          } else {
+            // Retry on next iteration
+            console.log(`[${number}] Will retry after error`);
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           }
         }
       }
-    });
+    }
 
     // Convert map to array for response
     const results = Array.from(billResults.values());
