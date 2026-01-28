@@ -2,7 +2,16 @@ import { detectText } from "@/src/hooks/TextDetector";
 import fetch from "node-fetch";
 import { Page } from "puppeteer-core";
 
-export async function solveCaptcha(page: Page, consumerNo: string): Promise<string> {
+export interface CaptchaSession {
+  sessionId: string;
+  captchaText: string;
+}
+
+/**
+ * Solves captcha and returns session info (session ID + captcha text)
+ * Does NOT fetch the bill - just returns credentials for reuse
+ */
+export async function solveCaptchaOnly(page: Page): Promise<CaptchaSession> {
   try {
     // Enable request interception to block CSS, fonts, media (but allow images)
     await page.setRequestInterception(true);
@@ -59,28 +68,50 @@ export async function solveCaptcha(page: Page, consumerNo: string): Promise<stri
     const cookies = await page.cookies();
     const jsession = cookies.find((c) => c.name === "JSESSIONID");
 
-    // Send POST request to view bill with captcha and consumer number
-    const res = await fetch("https://www.sngpl.com.pk/viewbill", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Cookie: `${jsession?.name}=${jsession?.value}`,
-      },
-      body: `proc=viewbill&consumer=${consumerNo}&contype=NewCon&txtCaptcha=${captchaText}`,
-    });
+    if (!jsession) throw new Error("Session ID not found");
 
-    if (!res.ok) {
-      throw new Error("Request failed");
-    }
-
-    const text = await res.text();
-
-    if (text === "Invalid Captcha") {
-      throw new Error("Invalid Captcha");
-    }
-
-    return text;
+    return {
+      sessionId: jsession.value,
+      captchaText,
+    };
   } catch (error) {
     throw error;
   }
+}
+
+/**
+ * Fetches a bill using an existing session (no captcha solving)
+ */
+export async function fetchBillWithSession(
+  consumerNo: string,
+  session: CaptchaSession
+): Promise<string> {
+  const res = await fetch("https://www.sngpl.com.pk/viewbill", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Cookie: `JSESSIONID=${session.sessionId}`,
+    },
+    body: `proc=viewbill&consumer=${consumerNo}&contype=NewCon&txtCaptcha=${session.captchaText}`,
+  });
+
+  if (!res.ok) {
+    throw new Error("Request failed");
+  }
+
+  const text = await res.text();
+
+  if (text === "Invalid Captcha") {
+    throw new Error("Invalid Captcha");
+  }
+
+  return text;
+}
+
+/**
+ * Original function - solves captcha AND fetches the bill
+ */
+export async function solveCaptcha(page: Page, consumerNo: string): Promise<string> {
+  const session = await solveCaptchaOnly(page);
+  return fetchBillWithSession(consumerNo, session);
 }

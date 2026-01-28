@@ -1,129 +1,33 @@
 import { NextRequest } from "next/server";
+import { getElectricSession, fetchElectricBill } from "./electricBill";
+import { fetchGasBillWithCaptcha } from "./gasBill";
+import puppeteer, { Browser, Page } from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 
-const API_URL = "https://bill.pitc.com.pk/iescobill/general";
-const BATCH_SIZE = 20; // Process 20 bills at a time
-
-// Default headers for the API request
-const DEFAULT_HEADERS = {
-  "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-  "accept-language": "en-US,en;q=0.9,ur-PK;q=0.8,ur;q=0.7",
-  "cache-control": "no-cache",
-  "pragma": "no-cache",
-  "referer": "https://bill.pitc.com.pk/iescobill",
-  "sec-ch-ua": `"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"`,
-  "sec-ch-ua-mobile": "?1",
-  "sec-ch-ua-platform": `"Android"`,
-  "sec-fetch-dest": "document",
-  "sec-fetch-mode": "navigate",
-  "sec-fetch-site": "same-origin",
-  "sec-fetch-user": "?1",
-  "upgrade-insecure-requests": "1",
-  "user-agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36",
-};
-
-// Session cookie - will be updated dynamically
-let sessionCookie = "";
-
-// Get fresh session cookies from the main page
-async function refreshSession(): Promise<string> {
-  try {
-    const response = await fetch("https://bill.pitc.com.pk/iescobill", {
-      method: "GET",
-      headers: {
-        "user-agent": DEFAULT_HEADERS["user-agent"],
-        "accept": DEFAULT_HEADERS["accept"],
-      },
-    });
-
-    const setCookieHeaders = response.headers.getSetCookie();
-    const cookies = setCookieHeaders
-      .map(cookie => cookie.split(";")[0])
-      .join("; ");
-
-    console.log("Got fresh session cookies");
-    return cookies;
-  } catch (error) {
-    console.error("Failed to refresh session:", error);
-    return "";
-  }
-}
-
-// Fetch bill data using POST API
-async function fetchBill(
-  refNumber: string,
-  cookies: string
-): Promise<{ success: boolean; number: string; amount: number; extractedText?: string; error?: string }> {
-  try {
-    const url = `${API_URL}?refno=${encodeURIComponent(refNumber)}`;
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        ...DEFAULT_HEADERS,
-        "cookie": cookies,
-      },
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (!response.ok) {
-      return { success: false, number: refNumber, amount: 0, error: `HTTP ${response.status}` };
-    }
-
-    const html = await response.text();
-
-    let amount = 0;
-    let extractedText = "";
-
-    // Method 1: Look for CURRENT BILL label followed by value
-    const currentBillMatch = html.match(/<b>\s*CURRENT\s*BILL\s*<\/b>\s*<\/td>\s*<td[^>]*>\s*([^<]+)/i);
-    if (currentBillMatch) {
-      extractedText = currentBillMatch[1].trim();
-    }
-
-    // Method 2: Alternative - look for nestedtd2width content class
-    if (!extractedText) {
-      const contentMatch = html.match(/class="nestedtd2width\s+content"[^>]*>([^<]+)/i);
-      if (contentMatch) {
-        extractedText = contentMatch[1].trim();
-      }
-    }
-
-    // Method 3: Try to find any amount pattern near CURRENT BILL
-    if (!extractedText) {
-      const billSection = html.match(/CURRENT\s*BILL[\s\S]{0,200}/i);
-      if (billSection) {
-        const amountMatch = billSection[0].match(/>\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*</);
-        if (amountMatch) {
-          extractedText = amountMatch[1];
-        }
-      }
-    }
-
-    // Parse amount from extracted text
-    if (extractedText) {
-      const cleaned = extractedText.replace(/,/g, "").replace(/[^\d.]/g, "");
-      amount = parseFloat(cleaned) || 0;
-    }
-
-    // Verify the reference number appears in the response
-    const verified = html.includes(refNumber);
-
-    if (!verified) {
-      return { success: false, number: refNumber, amount: 0, error: "Reference not found" };
-    }
-
-    return { success: true, number: refNumber, amount, extractedText };
-
-  } catch (error: any) {
-    if (error.name === "TimeoutError") {
-      return { success: false, number: refNumber, amount: 0, error: "Timeout" };
-    }
-    return { success: false, number: refNumber, amount: 0, error: error.message || "Failed" };
-  }
-}
+const BATCH_SIZE = 20;
+const isVercel = !!process.env.VERCEL;
+const localChromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
 function sendSSE(controller: ReadableStreamDefaultController, event: string, data: any) {
   controller.enqueue(new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+}
+
+// Separate numbers by type based on digit count
+function categorizeNumbers(numbers: string[]): { electric: string[]; gas: string[] } {
+  const electric: string[] = [];
+  const gas: string[] = [];
+
+  for (const num of numbers) {
+    const digitsOnly = num.replace(/\D/g, "");
+    if (digitsOnly.length === 14) {
+      electric.push(num);
+    } else if (digitsOnly.length === 11) {
+      gas.push(num);
+    }
+    // Ignore numbers that don't match either pattern
+  }
+
+  return { electric, gas };
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -131,6 +35,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const stream = new ReadableStream({
     async start(controller) {
+      let gasBrowser: Browser | null = null;
+
       try {
         const formData = await req.formData();
         const file = formData.get("file") as File;
@@ -156,13 +62,14 @@ export async function POST(req: NextRequest): Promise<Response> {
           return;
         }
 
-        // Get session cookies
-        sessionCookie = await refreshSession();
-        if (!sessionCookie) {
-          sendSSE(controller, "error", { error: "Failed to get session" });
-          controller.close();
-          return;
-        }
+        // Categorize numbers by type (14 digit = electric, 11 digit = gas)
+        const { electric, gas } = categorizeNumbers(numbers);
+
+        sendSSE(controller, "progress", {
+          total: numbers.length,
+          processed: 0,
+          message: `Found ${electric.length} electric bills (14-digit), ${gas.length} gas bills (11-digit)`,
+        });
 
         // Results storage
         const results: Map<string, { 
@@ -171,104 +78,54 @@ export async function POST(req: NextRequest): Promise<Response> {
           extractedText?: string; 
           status: string; 
           attempts: number;
+          type: "electric" | "gas";
         }> = new Map();
 
-        numbers.forEach((n) => results.set(n, { 
-          number: n, 
-          amount: 0, 
-          status: "pending", 
-          attempts: 0 
-        }));
+        numbers.forEach((n) => {
+          const digitsOnly = n.replace(/\D/g, "");
+          const type = digitsOnly.length === 14 ? "electric" : "gas";
+          results.set(n, { number: n, amount: 0, status: "pending", attempts: 0, type });
+        });
 
         let processed = 0;
         let successCount = 0;
         let totalAmount = 0;
-        const retryList: string[] = []; // Bills to retry
+        const retryList: string[] = [];
 
-        // Create batches
-        const batches: string[][] = [];
-        for (let i = 0; i < numbers.length; i += BATCH_SIZE) {
-          batches.push(numbers.slice(i, i + BATCH_SIZE));
-        }
+        // ========== PROCESS ELECTRIC BILLS (14-digit) ==========
+        if (electric.length > 0) {
+          sendSSE(controller, "progress", {
+            total: numbers.length,
+            processed,
+            message: `Processing ${electric.length} electric bills...`,
+          });
 
-        sendSSE(controller, "progress", {
-          total: numbers.length,
-          processed: 0,
-          message: `Processing ${numbers.length} bills (20 parallel)...`,
-        });
-
-        // FIRST PASS: Process all bills in batches - NO DELAYS
-        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-          const batch = batches[batchIndex];
-          
-          // Run 20 requests in parallel - no retry here
-          const batchResults = await Promise.all(
-            batch.map((refNumber) => fetchBill(refNumber, sessionCookie))
-          );
-
-          // Process results
-          for (const result of batchResults) {
-            const entry = results.get(result.number)!;
-            processed++;
-            entry.attempts = 1;
-
-            if (result.success && result.amount > 0) {
-              entry.amount = result.amount;
-              entry.extractedText = result.extractedText;
-              entry.status = "success";
-              successCount++;
-              totalAmount += result.amount;
-            } else {
-              // Add to retry list (failed or zero)
-              entry.status = "pending_retry";
-              entry.extractedText = result.error || "Zero/Failed";
-              retryList.push(result.number);
-            }
-
-            // Send bill update
-            sendSSE(controller, "billUpdate", {
-              number: result.number,
-              amount: entry.amount,
-              status: entry.status,
-              extractedText: entry.extractedText,
-              attempts: entry.attempts,
-              index: processed,
+          // Get electric session
+          const electricCookies = await getElectricSession();
+          if (!electricCookies) {
+            sendSSE(controller, "progress", {
+              total: numbers.length,
+              processed,
+              message: "Warning: Failed to get electric session",
             });
           }
 
-          // Progress update
-          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-          sendSSE(controller, "progress", {
-            total: numbers.length,
-            processed,
-            successCount,
-            totalAmount,
-            message: `${processed}/${numbers.length} done (${successCount} success, Rs. ${totalAmount.toLocaleString()}) - ${elapsed}s`,
-          });
-        }
-
-        // RETRY PASS: Only retry failed/zero bills
-        if (retryList.length > 0) {
-          sendSSE(controller, "progress", {
-            total: numbers.length,
-            processed,
-            message: `Retrying ${retryList.length} failed bills...`,
-          });
-
-          // Retry all at once (or in batches if too many)
-          const retryBatches: string[][] = [];
-          for (let i = 0; i < retryList.length; i += BATCH_SIZE) {
-            retryBatches.push(retryList.slice(i, i + BATCH_SIZE));
+          // Create batches for electric bills
+          const electricBatches: string[][] = [];
+          for (let i = 0; i < electric.length; i += BATCH_SIZE) {
+            electricBatches.push(electric.slice(i, i + BATCH_SIZE));
           }
 
-          for (const retryBatch of retryBatches) {
-            const retryResults = await Promise.all(
-              retryBatch.map((refNumber) => fetchBill(refNumber, sessionCookie))
+          // Process electric bills in batches
+          for (const batch of electricBatches) {
+            const batchResults = await Promise.all(
+              batch.map((refNumber) => fetchElectricBill(refNumber, electricCookies))
             );
 
-            for (const result of retryResults) {
+            for (const result of batchResults) {
               const entry = results.get(result.number)!;
-              entry.attempts = 2;
+              processed++;
+              entry.attempts = 1;
 
               if (result.success && result.amount > 0) {
                 entry.amount = result.amount;
@@ -276,34 +133,187 @@ export async function POST(req: NextRequest): Promise<Response> {
                 entry.status = "success";
                 successCount++;
                 totalAmount += result.amount;
-              } else if (result.success && result.amount === 0) {
-                entry.status = "zero";
-                entry.extractedText = result.extractedText || "Zero amount";
               } else {
-                entry.status = "failed";
-                entry.extractedText = result.error;
+                entry.status = "pending_retry";
+                entry.extractedText = result.error || "Zero/Failed";
+                retryList.push(result.number);
               }
 
-              // Update frontend
               sendSSE(controller, "billUpdate", {
                 number: result.number,
                 amount: entry.amount,
                 status: entry.status,
                 extractedText: entry.extractedText,
                 attempts: entry.attempts,
+                type: "electric",
                 index: processed,
+              });
+            }
+
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+            sendSSE(controller, "progress", {
+              total: numbers.length,
+              processed,
+              successCount,
+              totalAmount,
+              message: `Electric: ${processed}/${electric.length} (${successCount} success, Rs. ${totalAmount.toLocaleString()}) - ${elapsed}s`,
+            });
+          }
+
+          // Retry failed electric bills
+          const electricRetries = retryList.filter(n => {
+            const digitsOnly = n.replace(/\D/g, "");
+            return digitsOnly.length === 14;
+          });
+
+          if (electricRetries.length > 0) {
+            sendSSE(controller, "progress", {
+              total: numbers.length,
+              processed,
+              message: `Retrying ${electricRetries.length} failed electric bills...`,
+            });
+
+            const retryBatches: string[][] = [];
+            for (let i = 0; i < electricRetries.length; i += BATCH_SIZE) {
+              retryBatches.push(electricRetries.slice(i, i + BATCH_SIZE));
+            }
+
+            for (const retryBatch of retryBatches) {
+              const retryResults = await Promise.all(
+                retryBatch.map((refNumber) => fetchElectricBill(refNumber, electricCookies))
+              );
+
+              for (const result of retryResults) {
+                const entry = results.get(result.number)!;
+                entry.attempts = 2;
+
+                if (result.success && result.amount > 0) {
+                  entry.amount = result.amount;
+                  entry.extractedText = result.extractedText;
+                  entry.status = "success";
+                  successCount++;
+                  totalAmount += result.amount;
+                } else if (result.success && result.amount === 0) {
+                  entry.status = "zero";
+                  entry.extractedText = result.extractedText || "Zero amount";
+                } else {
+                  entry.status = "failed";
+                  entry.extractedText = result.error;
+                }
+
+                sendSSE(controller, "billUpdate", {
+                  number: result.number,
+                  amount: entry.amount,
+                  status: entry.status,
+                  extractedText: entry.extractedText,
+                  attempts: entry.attempts,
+                  type: "electric",
+                  index: processed,
+                });
+              }
+            }
+          }
+        }
+
+        // ========== PROCESS GAS BILLS (11-digit) ==========
+        if (gas.length > 0) {
+          sendSSE(controller, "progress", {
+            total: numbers.length,
+            processed,
+            message: `Processing ${gas.length} gas bills (requires captcha)...`,
+          });
+
+          // Launch browser for gas bills (requires captcha)
+          const executablePath = isVercel ? await chromium.executablePath() : localChromePath;
+          gasBrowser = await puppeteer.launch({
+            headless: isVercel ? true : false,
+            args: isVercel 
+              ? [...chromium.args, '--disable-dev-shm-usage', '--no-sandbox'] 
+              : ['--disable-dev-shm-usage'],
+            executablePath,
+          });
+
+          // Create pages for parallel gas bill processing (limited to 5 due to captcha complexity)
+          const gasPages: Page[] = [];
+          const GAS_PARALLEL = 5;
+          for (let i = 0; i < Math.min(GAS_PARALLEL, gas.length); i++) {
+            const page = await gasBrowser.newPage();
+            gasPages.push(page);
+          }
+
+          // Process gas bills
+          const gasQueue = [...gas];
+          
+          async function processGasWorker(page: Page) {
+            while (gasQueue.length > 0) {
+              const consumerNo = gasQueue.shift();
+              if (!consumerNo) break;
+
+              const entry = results.get(consumerNo)!;
+              const result = await fetchGasBillWithCaptcha(page, consumerNo);
+              
+              processed++;
+              entry.attempts = 1;
+
+              if (result.success && result.amount > 0) {
+                entry.amount = result.amount;
+                entry.extractedText = result.extractedText;
+                entry.status = "success";
+                successCount++;
+                totalAmount += result.amount;
+              } else if (result.error === "Invalid Captcha") {
+                // Retry once for captcha failure
+                const retryResult = await fetchGasBillWithCaptcha(page, consumerNo);
+                entry.attempts = 2;
+                
+                if (retryResult.success && retryResult.amount > 0) {
+                  entry.amount = retryResult.amount;
+                  entry.extractedText = retryResult.extractedText;
+                  entry.status = "success";
+                  successCount++;
+                  totalAmount += retryResult.amount;
+                } else {
+                  entry.status = "failed";
+                  entry.extractedText = retryResult.error || "Captcha failed";
+                }
+              } else {
+                entry.status = result.amount === 0 ? "zero" : "failed";
+                entry.extractedText = result.error || result.extractedText;
+              }
+
+              sendSSE(controller, "billUpdate", {
+                number: consumerNo,
+                amount: entry.amount,
+                status: entry.status,
+                extractedText: entry.extractedText,
+                attempts: entry.attempts,
+                type: "gas",
+                index: processed,
+              });
+
+              const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+              sendSSE(controller, "progress", {
+                total: numbers.length,
+                processed,
+                successCount,
+                totalAmount,
+                message: `Gas: Processing... (${successCount} success, Rs. ${totalAmount.toLocaleString()}) - ${elapsed}s`,
               });
             }
           }
 
-          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-          sendSSE(controller, "progress", {
-            total: numbers.length,
-            processed,
-            successCount,
-            totalAmount,
-            message: `Retry done - ${successCount} success, Rs. ${totalAmount.toLocaleString()} - ${elapsed}s`,
-          });
+          // Run gas workers in parallel
+          await Promise.all(gasPages.map(page => processGasWorker(page)));
+
+          // Close gas pages
+          for (const page of gasPages) {
+            await page.close().catch(() => {});
+          }
+        }
+
+        // Close gas browser
+        if (gasBrowser) {
+          await gasBrowser.close().catch(() => {});
         }
 
         // Final statistics
@@ -316,11 +326,16 @@ export async function POST(req: NextRequest): Promise<Response> {
           .reduce((sum, r) => sum + r.amount, 0);
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
+        const electricSuccess = allResults.filter((r) => r.type === "electric" && r.status === "success").length;
+        const gasSuccess = allResults.filter((r) => r.type === "gas" && r.status === "success").length;
+
         sendSSE(controller, "complete", {
           success: true,
-          message: `Done in ${elapsed}s - ${finalSuccessCount} success, ${zeroCount} zero, ${failedCount} failed`,
+          message: `Done in ${elapsed}s - Electric: ${electricSuccess}/${electric.length}, Gas: ${gasSuccess}/${gas.length}`,
           summary: {
             totalBills: numbers.length,
+            electricBills: electric.length,
+            gasBills: gas.length,
             calculatedBills: finalSuccessCount,
             totalAmount: finalTotalAmount,
             zeroAmountBills: allResults.filter((r) => r.status === "zero"),
@@ -338,6 +353,12 @@ export async function POST(req: NextRequest): Promise<Response> {
         controller.close();
       } catch (err: any) {
         console.error("Error:", err);
+        
+        // Cleanup browser on error
+        if (gasBrowser) {
+          await gasBrowser.close().catch(() => {});
+        }
+        
         sendSSE(controller, "error", { error: err.message || "Internal error" });
         controller.close();
       }
