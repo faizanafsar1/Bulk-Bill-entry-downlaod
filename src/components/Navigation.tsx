@@ -12,7 +12,7 @@ export default function Navigation() {
     { href: "/", label: "Bulk Entry" },
     { href: "/gas", label: "Gas Bill Scanner" },
     { href: "/iesco", label: "IESCO Bill Scanner" },
-    { href: "/get-gas-bill", label: "Get Gas Bill" },
+    { href: "/get-gas-bill", label: "Print Gas Bill" },
     { href: "/calculate-amount", label: "Calculate Amount" },
   ];
 
@@ -64,11 +64,10 @@ export default function Navigation() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`px-3 py-2 md:px-4 md:py-2.5 rounded-md text-sm md:text-base font-medium transition-colors ${
-                    pathname === link.href
-                      ? "bg-teal-600 text-white"
-                      : "text-gray-700 hover:bg-gray-100 hover:text-teal-600"
-                  }`}
+                  className={`px-3 py-2 md:px-4 md:py-2.5 rounded-md text-sm md:text-base font-medium transition-colors ${pathname === link.href
+                    ? "bg-teal-600 text-white"
+                    : "text-gray-700 hover:bg-gray-100 hover:text-teal-600"
+                    }`}
                 >
                   {link.label}
                 </Link>
@@ -111,9 +110,8 @@ export default function Navigation() {
 
       {/* Mobile Sidebar Menu - Slides from right */}
       <div
-        className={`mobile-menu md:hidden fixed top-0 right-0 h-full w-64 bg-white shadow-xl z-50 transform transition-transform duration-300 ease-in-out ${
-          isMenuOpen ? "translate-x-0" : "translate-x-full"
-        }`}
+        className={`mobile-menu md:hidden fixed top-0 right-0 h-full w-64 bg-white shadow-xl z-50 transform transition-transform duration-300 ease-in-out ${isMenuOpen ? "translate-x-0" : "translate-x-full"
+          }`}
       >
         <div className="flex flex-col h-full">
           {/* Sidebar Header */}
@@ -146,11 +144,10 @@ export default function Navigation() {
                   key={link.href}
                   href={link.href}
                   onClick={() => setIsMenuOpen(false)}
-                  className={`px-6 py-4 text-base font-medium transition-colors ${
-                    pathname === link.href
-                      ? "bg-teal-50 text-teal-600 border-r-4 border-teal-600"
-                      : "text-gray-700 hover:bg-gray-50 hover:text-teal-600"
-                  }`}
+                  className={`px-6 py-4 text-base font-medium transition-colors ${pathname === link.href
+                    ? "bg-teal-50 text-teal-600 border-r-4 border-teal-600"
+                    : "text-gray-700 hover:bg-gray-50 hover:text-teal-600"
+                    }`}
                 >
                   {link.label}
                 </Link>
