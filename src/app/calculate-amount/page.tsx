@@ -182,7 +182,8 @@ export default function CalculateAmountPage() {
             <h1 className="text-2xl font-bold mb-4">Calculate Bill Amount</h1>
 
             <form className="flex flex-col items-center space-y-6 w-full max-w-md" onSubmit={handleSubmit}>
-                {/* Bill Type Selector */}
+
+
                 <div className="w-full">
                     <label htmlFor="billType" className="block font-medium mb-2 text-gray-700">
                         Select Bill Type
@@ -192,8 +193,8 @@ export default function CalculateAmountPage() {
                         value={billType}
                         onChange={handleBillTypeChange}
                         className={`w-full px-4 py-3 rounded-lg border-2 text-lg font-medium transition-all cursor-pointer focus:outline-none focus:ring-2 ${billType === "electric"
-                                ? "border-teal-500 bg-teal-50 text-teal-800 focus:ring-teal-300"
-                                : "border-orange-500 bg-orange-50 text-orange-800 focus:ring-orange-300"
+                            ? "border-teal-500 bg-teal-50 text-teal-800 focus:ring-teal-300"
+                            : "border-orange-500 bg-orange-50 text-orange-800 focus:ring-orange-300"
                             }`}
                         disabled={loading}
                     >
@@ -213,8 +214,8 @@ export default function CalculateAmountPage() {
                         Upload TXT File
                     </label>
                     <div className={`border-2 border-dashed rounded-lg p-6 text-center transition-all ${billType === "electric"
-                            ? "border-teal-300 hover:border-teal-500"
-                            : "border-orange-300 hover:border-orange-500"
+                        ? "border-teal-300 hover:border-teal-500"
+                        : "border-orange-300 hover:border-orange-500"
                         }`}>
                         <input
                             id="file"
@@ -255,10 +256,10 @@ export default function CalculateAmountPage() {
                     type="submit"
                     disabled={loading || !file}
                     className={`w-full px-6 py-3 rounded-lg transition text-lg font-semibold ${loading || !file
-                            ? "bg-gray-400 cursor-not-allowed text-gray-200"
-                            : billType === "electric"
-                                ? "bg-teal-600 hover:bg-teal-700 text-white shadow-lg hover:shadow-xl"
-                                : "bg-orange-600 hover:bg-orange-700 text-white shadow-lg hover:shadow-xl"
+                        ? "bg-gray-400 cursor-not-allowed text-gray-200"
+                        : billType === "electric"
+                            ? "bg-teal-600 hover:bg-teal-700 text-white shadow-lg hover:shadow-xl"
+                            : "bg-orange-600 hover:bg-orange-700 text-white shadow-lg hover:shadow-xl"
                         }`}
                 >
                     {loading ? (
@@ -362,8 +363,8 @@ export default function CalculateAmountPage() {
 
                                 {currentProcessing && (
                                     <div className={`p-3 rounded-lg border-2 animate-pulse ${billType === "electric"
-                                            ? "border-teal-300 bg-teal-50"
-                                            : "border-orange-300 bg-orange-50"
+                                        ? "border-teal-300 bg-teal-50"
+                                        : "border-orange-300 bg-orange-50"
                                         }`}>
                                         <div className="flex items-center space-x-3">
                                             <svg className={`animate-spin h-4 w-4 ${billType === "electric" ? "text-teal-600" : "text-orange-600"
@@ -413,8 +414,8 @@ export default function CalculateAmountPage() {
 
                     {/* Total Amount - Bold and Large */}
                     <div className={`p-6 rounded-lg text-center border-2 ${billType === "electric"
-                            ? "bg-teal-50 border-teal-200"
-                            : "bg-orange-50 border-orange-200"
+                        ? "bg-teal-50 border-teal-200"
+                        : "bg-orange-50 border-orange-200"
                         }`}>
                         <div className="text-sm text-gray-600 mb-2">Total Calculated Amount</div>
                         <div className={`text-4xl font-bold ${billType === "electric" ? "text-teal-700" : "text-orange-700"}`}>

@@ -29,7 +29,7 @@ async function detectText(base64Image: string): Promise<string> {
     });
 
     const result = await response.json();
-
+    // console.log("OCR.space result:", result);
     return result.ParsedResults?.[0]?.ParsedText || "";
   } catch (error) {
     console.error("OCR.space error:", error);
