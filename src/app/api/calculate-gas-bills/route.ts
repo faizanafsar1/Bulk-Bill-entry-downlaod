@@ -6,19 +6,40 @@ const BASE_URL = "https://www.sngpl.com.pk";
 const LOGIN_URL = `${BASE_URL}/login.jsp?mdids=85`;
 const VIEWBILL_URL = `${BASE_URL}/viewbill`;
 
-interface CaptchaSession {
+interface WorkingSession {
   sessionId: string;
   captchaText: string;
 }
 
 /**
- * Fetches the login page and extracts session cookie + captcha image
+ * Cleans captcha text: trim, remove extra spaces, newlines, and capitalize
  */
-async function getSessionAndCaptcha(): Promise<CaptchaSession> {
-  const response = await fetch(LOGIN_URL, {
+function cleanCaptchaText(text: string): string {
+  return text
+    .trim()
+    .replace(/[\s\n\r]+/g, "")
+    .toUpperCase();
+}
+
+/**
+ * Fetches the login page and extracts session cookie + captcha image
+ * Each request is completely fresh (like opening a new browser tab)
+ */
+async function getSessionAndCaptcha(): Promise<{ sessionId: string; captchaBase64: string }> {
+  // Add timestamp to bust cache completely (like opening new tab)
+  const cacheBuster = `_=${Date.now()}&r=${Math.random().toString(36).substring(7)}`;
+  const freshLoginUrl = LOGIN_URL.includes('?') 
+    ? `${LOGIN_URL}&${cacheBuster}` 
+    : `${LOGIN_URL}?${cacheBuster}`;
+
+  const response = await fetch(freshLoginUrl, {
     method: "GET",
+    cache: "no-store",
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
     },
   });
 
@@ -26,7 +47,6 @@ async function getSessionAndCaptcha(): Promise<CaptchaSession> {
     throw new Error("Failed to fetch login page");
   }
 
-  // Extract JSESSIONID from cookies
   const setCookie = response.headers.get("set-cookie");
   const sessionMatch = setCookie?.match(/JSESSIONID=([^;]+)/);
   
@@ -37,7 +57,6 @@ async function getSessionAndCaptcha(): Promise<CaptchaSession> {
   const sessionId = sessionMatch[1];
   const html = await response.text();
   
-  // Parse HTML with cheerio
   const $ = cheerio.load(html);
   const captchaImg = $("#captchaimg");
   
@@ -51,15 +70,24 @@ async function getSessionAndCaptcha(): Promise<CaptchaSession> {
     throw new Error("Captcha image src not found");
   }
 
-  // Fetch the captcha image with the session cookie
   const captchaUrl = captchaSrc.startsWith("http") 
     ? captchaSrc 
     : `${BASE_URL}${captchaSrc.startsWith("/") ? "" : "/"}${captchaSrc}`;
 
-  const captchaResponse = await fetch(captchaUrl, {
+  // Add cache buster to captcha URL too
+  const cacheBusterCaptcha = `_=${Date.now()}&r=${Math.random().toString(36).substring(7)}`;
+  const freshCaptchaUrl = captchaUrl.includes('?') 
+    ? `${captchaUrl}&${cacheBusterCaptcha}` 
+    : `${captchaUrl}?${cacheBusterCaptcha}`;
+
+  const captchaResponse = await fetch(freshCaptchaUrl, {
+    cache: "no-store",
     headers: {
       "Cookie": `JSESSIONID=${sessionId}`,
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
     },
   });
 
@@ -70,93 +98,63 @@ async function getSessionAndCaptcha(): Promise<CaptchaSession> {
   const captchaBuffer = await captchaResponse.arrayBuffer();
   const captchaBase64 = `data:image/png;base64,${Buffer.from(captchaBuffer).toString("base64")}`;
 
-  // Detect and clean captcha text
-  const rawCaptchaText = await detectText(captchaBase64);
-  const captchaText = rawCaptchaText
-    .trim()
-    .replace(/[\s\n\r]+/g, "")
-    .toUpperCase();
-
   return {
     sessionId,
-    captchaText,
+    captchaBase64,
   };
 }
 
 /**
- * Verify a captcha session works by making a test request
+ * Attempts to fetch a bill and returns the working session
  */
-async function verifySession(session: CaptchaSession, testConsumerNo: string): Promise<boolean> {
+async function attemptBillFetch(consumerNo: string): Promise<{ html: string; session: WorkingSession } | null> {
   try {
+    const { sessionId, captchaBase64 } = await getSessionAndCaptcha();
+    const rawCaptchaText = await detectText(captchaBase64);
+    const captchaText = cleanCaptchaText(rawCaptchaText);
+    
+    console.log(`[attemptBillFetch] Captcha: "${captchaText}" for ${consumerNo}`);
+
     const response = await fetch(VIEWBILL_URL, {
       method: "POST",
+      cache: "no-store",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": `JSESSIONID=${session.sessionId}`,
+        "Cookie": `JSESSIONID=${sessionId}`,
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       },
-      body: `proc=viewbill&consumer=${testConsumerNo}&contype=NewCon&txtCaptcha=${session.captchaText}`,
+      body: `proc=viewbill&consumer=${consumerNo}&contype=NewCon&txtCaptcha=${captchaText}`,
     });
+
+    if (!response.ok) {
+      console.log(`[attemptBillFetch] HTTP Error: ${response.status}`);
+      return null;
+    }
 
     const text = await response.text();
-    return text !== "Invalid Captcha";
-  } catch {
-    return false;
+    console.log(`[attemptBillFetch] Response: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+
+    if (text === "Invalid Captcha") {
+      return null;
+    }
+
+    return { 
+      html: text, 
+      session: { sessionId, captchaText } 
+    };
+  } catch (err) {
+    console.log(`[attemptBillFetch] Error:`, err);
+    return null;
   }
 }
 
 /**
- * Get a working captcha session by trying 5 parallel requests, retry if all fail
- * Verifies the captcha actually works before returning
+ * Fetch a bill using an already-verified session
  */
-async function getWorkingSession(testConsumerNo: string): Promise<CaptchaSession | null> {
-  for (let batch = 1; batch <= 2; batch++) {
-    console.log(`Starting captcha batch ${batch} of 5 parallel requests...`);
-    
-    const attempts = Array(5).fill(null).map(async () => {
-      try {
-        const session = await getSessionAndCaptcha();
-        // Verify the captcha actually works
-        const isValid = await verifySession(session, testConsumerNo);
-        if (isValid) {
-          console.log(`Captcha verified: "${session.captchaText}"`);
-          return session;
-        }
-        console.log(`Captcha failed verification: "${session.captchaText}"`);
-        return null;
-      } catch {
-        return null;
-      }
-    });
-
-    const results = await Promise.all(attempts);
-    
-    const passed = results.filter((r) => r !== null).length;
-    const failed = results.filter((r) => r === null).length;
-    console.log(`Captcha batch ${batch} - Verified: ${passed}, Failed: ${failed}`);
-
-    const success = results.find((r) => r !== null);
-    if (success) {
-      return success;
-    }
-
-    if (batch < 2) {
-      console.log("First captcha batch failed verification, retrying with second batch...");
-    }
-  }
-  
-  return null;
-}
-
-/**
- * Fetches the bill using session and solved captcha
- */
-async function fetchBillWithSession(
-  consumerNo: string,
-  session: CaptchaSession
-): Promise<string> {
+async function fetchBillWithSession(consumerNo: string, session: WorkingSession): Promise<string> {
   const response = await fetch(VIEWBILL_URL, {
     method: "POST",
+    cache: "no-store",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       "Cookie": `JSESSIONID=${session.sessionId}`,
@@ -170,6 +168,7 @@ async function fetchBillWithSession(
   }
 
   const text = await response.text();
+  console.log(`[fetchBill] ${consumerNo} | Response: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
 
   if (text === "Invalid Captcha") {
     throw new Error("Invalid Captcha");
@@ -221,6 +220,7 @@ function extractBillAmount(html: string, consumerNo: string): string | null {
 
 export async function POST(req: NextRequest): Promise<Response> {
   const startTime = Date.now();
+  const MAX_ATTEMPTS = 10;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -267,28 +267,6 @@ export async function POST(req: NextRequest): Promise<Response> {
           message: `Found ${gasNumbers.length} gas bills. Solving captcha...`,
         });
 
-        sendSSE(controller, "progress", {
-          total: gasNumbers.length,
-          processed: 0,
-          message: `Solving captcha (trying 5 requests in parallel)...`,
-        });
-
-        // STEP 1: Solve captcha ONCE using 5 parallel requests (retry if all fail)
-        // Use the first gas number to verify the captcha works
-        const session = await getWorkingSession(gasNumbers[0]);
-
-        if (!session) {
-          sendSSE(controller, "error", { error: "Captcha failed on all attempts" });
-          controller.close();
-          return;
-        }
-
-        sendSSE(controller, "progress", {
-          total: gasNumbers.length,
-          processed: 0,
-          message: `Captcha solved! Fetching ${gasNumbers.length} bills in parallel...`,
-        });
-
         // Results storage
         const results: Map<string, { 
           number: string; 
@@ -307,32 +285,119 @@ export async function POST(req: NextRequest): Promise<Response> {
         let successCount = 0;
         let totalAmount = 0;
 
-        // STEP 2: Fetch ALL bills in parallel using the same session
-        const billPromises = gasNumbers.map(async (consumerNo) => {
-          try {
-            const html = await fetchBillWithSession(consumerNo, session);
+        // STEP 1: Fetch FIRST bill with SEQUENTIAL captcha attempts (max 10)
+        // Each attempt is fresh (like opening new tab with cleared cache)
+        const firstNumber = gasNumbers[0];
+        let firstBillResult: { html: string; session: WorkingSession } | null = null;
+
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+          console.log(`Captcha attempt ${attempt}/${MAX_ATTEMPTS} (sequential, fresh request)...`);
+          
+          sendSSE(controller, "progress", {
+            total: gasNumbers.length,
+            processed: 0,
+            message: `Captcha attempt ${attempt}/${MAX_ATTEMPTS} (fresh request)...`,
+          });
+          
+          // Small delay between attempts (like waiting for page reload)
+          if (attempt > 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          
+          // Run ONE request at a time (sequential) - completely fresh
+          firstBillResult = await attemptBillFetch(firstNumber);
+          
+          if (firstBillResult) {
+            console.log(`Captcha solved on attempt ${attempt}!`);
+            sendSSE(controller, "progress", {
+              total: gasNumbers.length,
+              processed: 0,
+              message: `Captcha solved on attempt ${attempt}!`,
+            });
+            break;
+          }
+
+          console.log(`Attempt ${attempt} failed.`);
+        }
+
+        if (!firstBillResult) {
+          sendSSE(controller, "error", { error: "Captcha failed on all 10 attempts. Please try again." });
+          controller.close();
+          return;
+        }
+
+        // Process first bill result
+        const firstEntry = results.get(firstNumber)!;
+        processed++;
+        firstEntry.attempts = 1;
+        
+        const firstAmountStr = extractBillAmount(firstBillResult.html, firstNumber);
+        if (firstAmountStr) {
+          const amount = parseFloat(firstAmountStr.replace(/,/g, "")) || 0;
+          firstEntry.amount = amount;
+          firstEntry.extractedText = firstAmountStr;
+          firstEntry.status = amount > 0 ? "success" : "zero";
+          if (amount > 0) {
+            successCount++;
+            totalAmount += amount;
+          }
+        } else {
+          firstEntry.status = "failed";
+          firstEntry.extractedText = "Could not extract amount";
+        }
+
+        sendSSE(controller, "billUpdate", {
+          number: firstNumber,
+          amount: firstEntry.amount,
+          status: firstEntry.status,
+          extractedText: firstEntry.extractedText,
+          attempts: firstEntry.attempts,
+          type: "gas",
+          index: processed,
+        });
+
+        // STEP 2: Use the working session to fetch ALL remaining bills
+        const remainingNumbers = gasNumbers.slice(1);
+        let workingSession = firstBillResult.session;
+
+        if (remainingNumbers.length > 0) {
+          sendSSE(controller, "progress", {
+            total: gasNumbers.length,
+            processed,
+            message: `Fetching ${remainingNumbers.length} remaining bills with same session...`,
+          });
+
+          // Fetch all remaining bills in parallel using the same session
+          const billPromises = remainingNumbers.map(async (consumerNo) => {
             const entry = results.get(consumerNo)!;
             
-            processed++;
-            entry.attempts = 1;
+            try {
+              const html = await fetchBillWithSession(consumerNo, workingSession);
+              
+              processed++;
+              entry.attempts = 1;
 
-            // Extract amount
-            const amountStr = extractBillAmount(html, consumerNo);
-            if (amountStr) {
-              const amount = parseFloat(amountStr.replace(/,/g, "")) || 0;
-              entry.amount = amount;
-              entry.extractedText = amountStr;
-              entry.status = amount > 0 ? "success" : "zero";
-              if (amount > 0) {
-                successCount++;
-                totalAmount += amount;
+              const amountStr = extractBillAmount(html, consumerNo);
+              if (amountStr) {
+                const amount = parseFloat(amountStr.replace(/,/g, "")) || 0;
+                entry.amount = amount;
+                entry.extractedText = amountStr;
+                entry.status = amount > 0 ? "success" : "zero";
+                if (amount > 0) {
+                  successCount++;
+                  totalAmount += amount;
+                }
+              } else {
+                entry.status = "failed";
+                entry.extractedText = "Could not extract amount";
               }
-            } else {
+            } catch (err: any) {
+              processed++;
+              entry.attempts = 1;
               entry.status = "failed";
-              entry.extractedText = "Could not extract amount";
+              entry.extractedText = err.message || "Request failed";
             }
 
-            // Send real-time update
             sendSSE(controller, "billUpdate", {
               number: consumerNo,
               amount: entry.amount,
@@ -351,33 +416,13 @@ export async function POST(req: NextRequest): Promise<Response> {
               totalAmount,
               message: `Gas: ${processed}/${gasNumbers.length} (${successCount} success, Rs. ${totalAmount.toLocaleString()}) - ${elapsed}s`,
             });
+          });
 
-            return { consumerNo, success: true };
-          } catch (err: any) {
-            const entry = results.get(consumerNo)!;
-            processed++;
-            entry.attempts = 1;
-            entry.status = "failed";
-            entry.extractedText = err.message || "Request failed";
+          await Promise.all(billPromises);
+        }
 
-            sendSSE(controller, "billUpdate", {
-              number: consumerNo,
-              amount: 0,
-              status: "failed",
-              extractedText: entry.extractedText,
-              attempts: 1,
-              type: "gas",
-              index: processed,
-            });
-
-            return { consumerNo, success: false, error: err.message };
-          }
-        });
-
-        await Promise.all(billPromises);
-
-        // STEP 3: Retry failed bills (Invalid Captcha) ONCE with new session
-        const failedBills = Array.from(results.values()).filter(
+        // STEP 3: Retry failed bills (Invalid Captcha) with same session SEQUENTIALLY
+        let failedBills = Array.from(results.values()).filter(
           (r) => r.status === "failed" && r.extractedText === "Invalid Captcha"
         );
 
@@ -385,47 +430,154 @@ export async function POST(req: NextRequest): Promise<Response> {
           sendSSE(controller, "progress", {
             total: gasNumbers.length,
             processed,
-            message: `Retrying ${failedBills.length} failed bills with new captcha...`,
+            message: `Retrying ${failedBills.length} failed bills with same session...`,
           });
 
-          const retrySession = await getWorkingSession(failedBills[0].number);
+          // Retry SEQUENTIALLY with same session
+          for (const bill of failedBills) {
+            try {
+              const html = await fetchBillWithSession(bill.number, workingSession);
+              const entry = results.get(bill.number)!;
+              entry.attempts = 2;
 
-          if (retrySession) {
-            const retryPromises = failedBills.map(async (bill) => {
-              try {
-                const html = await fetchBillWithSession(bill.number, retrySession);
-                const entry = results.get(bill.number)!;
-                entry.attempts = 2;
-
-                const amountStr = extractBillAmount(html, bill.number);
-                if (amountStr) {
-                  const amount = parseFloat(amountStr.replace(/,/g, "")) || 0;
-                  entry.amount = amount;
-                  entry.extractedText = amountStr;
-                  entry.status = amount > 0 ? "success" : "zero";
-                  if (amount > 0) {
-                    successCount++;
-                    totalAmount += amount;
-                  }
+              const amountStr = extractBillAmount(html, bill.number);
+              if (amountStr) {
+                const amount = parseFloat(amountStr.replace(/,/g, "")) || 0;
+                entry.amount = amount;
+                entry.extractedText = amountStr;
+                entry.status = amount > 0 ? "success" : "zero";
+                if (amount > 0) {
+                  successCount++;
+                  totalAmount += amount;
                 }
-
-                sendSSE(controller, "billUpdate", {
-                  number: bill.number,
-                  amount: entry.amount,
-                  status: entry.status,
-                  extractedText: entry.extractedText,
-                  attempts: entry.attempts,
-                  type: "gas",
-                  index: gasNumbers.indexOf(bill.number) + 1,
-                });
-              } catch (err: any) {
-                const entry = results.get(bill.number)!;
-                entry.attempts = 2;
-                entry.extractedText = err.message;
+              } else {
+                entry.status = "failed";
+                entry.extractedText = "Could not extract amount";
               }
+
+              sendSSE(controller, "billUpdate", {
+                number: bill.number,
+                amount: entry.amount,
+                status: entry.status,
+                extractedText: entry.extractedText,
+                attempts: entry.attempts,
+                type: "gas",
+                index: gasNumbers.indexOf(bill.number) + 1,
+              });
+            } catch {
+              // Still failed, will be handled in next step
+            }
+          }
+
+          // STEP 4: For bills that STILL failed, get new session SEQUENTIALLY (max 10 attempts)
+          failedBills = Array.from(results.values()).filter(
+            (r) => r.status === "failed" && r.extractedText === "Invalid Captcha"
+          );
+
+          if (failedBills.length > 0) {
+            sendSSE(controller, "progress", {
+              total: gasNumbers.length,
+              processed,
+              message: `${failedBills.length} bills still failed. Getting new captcha...`,
             });
 
-            await Promise.all(retryPromises);
+            // Get new session SEQUENTIALLY (one at a time, max 10 attempts)
+            let newSessionResult: { html: string; session: WorkingSession } | null = null;
+            const firstFailedNumber = failedBills[0].number;
+
+            for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+              console.log(`[Retry] Captcha attempt ${attempt}/${MAX_ATTEMPTS} (sequential, fresh request)...`);
+              
+              sendSSE(controller, "progress", {
+                total: gasNumbers.length,
+                processed,
+                message: `New captcha attempt ${attempt}/${MAX_ATTEMPTS} for failed bills (fresh request)...`,
+              });
+              
+              // Small delay between attempts (like waiting for page reload)
+              if (attempt > 1) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+              }
+              
+              // Run ONE request at a time (sequential) - completely fresh
+              newSessionResult = await attemptBillFetch(firstFailedNumber);
+              
+              if (newSessionResult) {
+                console.log(`[Retry] Captcha solved on attempt ${attempt}!`);
+                break;
+              }
+
+              console.log(`[Retry] Attempt ${attempt} failed.`);
+            }
+
+            if (newSessionResult) {
+              // Process first failed bill result
+              const firstFailedEntry = results.get(firstFailedNumber)!;
+              firstFailedEntry.attempts++;
+              
+              const amountStr = extractBillAmount(newSessionResult.html, firstFailedNumber);
+              if (amountStr) {
+                const amount = parseFloat(amountStr.replace(/,/g, "")) || 0;
+                firstFailedEntry.amount = amount;
+                firstFailedEntry.extractedText = amountStr;
+                firstFailedEntry.status = amount > 0 ? "success" : "zero";
+                if (amount > 0) {
+                  successCount++;
+                  totalAmount += amount;
+                }
+              }
+
+              sendSSE(controller, "billUpdate", {
+                number: firstFailedNumber,
+                amount: firstFailedEntry.amount,
+                status: firstFailedEntry.status,
+                extractedText: firstFailedEntry.extractedText,
+                attempts: firstFailedEntry.attempts,
+                type: "gas",
+                index: gasNumbers.indexOf(firstFailedNumber) + 1,
+              });
+
+              // Fetch remaining failed bills SEQUENTIALLY with new session
+              const remainingFailedBills = failedBills.slice(1);
+              workingSession = newSessionResult.session;
+
+              for (const bill of remainingFailedBills) {
+                try {
+                  const html = await fetchBillWithSession(bill.number, workingSession);
+                  const entry = results.get(bill.number)!;
+                  entry.attempts++;
+
+                  const amtStr = extractBillAmount(html, bill.number);
+                  if (amtStr) {
+                    const amount = parseFloat(amtStr.replace(/,/g, "")) || 0;
+                    entry.amount = amount;
+                    entry.extractedText = amtStr;
+                    entry.status = amount > 0 ? "success" : "zero";
+                    if (amount > 0) {
+                      successCount++;
+                      totalAmount += amount;
+                    }
+                  } else {
+                    entry.status = "failed";
+                    entry.extractedText = "Could not extract amount";
+                  }
+
+                  sendSSE(controller, "billUpdate", {
+                    number: bill.number,
+                    amount: entry.amount,
+                    status: entry.status,
+                    extractedText: entry.extractedText,
+                    attempts: entry.attempts,
+                    type: "gas",
+                    index: gasNumbers.indexOf(bill.number) + 1,
+                  });
+                } catch (err: any) {
+                  const entry = results.get(bill.number)!;
+                  entry.attempts++;
+                  entry.extractedText = err.message || "Request failed";
+                }
+              }
+            }
           }
         }
 
@@ -439,26 +591,39 @@ export async function POST(req: NextRequest): Promise<Response> {
           .reduce((sum, r) => sum + r.amount, 0);
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-        sendSSE(controller, "complete", {
-          success: true,
-          message: `Done in ${elapsed}s - Gas Bills: ${finalSuccessCount}/${gasNumbers.length}`,
-          summary: {
-            totalBills: gasNumbers.length,
-            electricBills: 0,
-            gasBills: gasNumbers.length,
-            calculatedBills: finalSuccessCount,
-            totalAmount: finalTotalAmount,
-            zeroAmountBills: allResults.filter((r) => r.status === "zero"),
-            failedBills: allResults.filter((r) => r.status === "failed"),
-          },
-          results: {
-            total: gasNumbers.length,
-            successful: finalSuccessCount,
-            failed: failedCount,
-            zero: zeroCount,
-            details: allResults,
-          },
-        });
+        // Check if all bills failed
+        const allFailed = finalSuccessCount === 0 && zeroCount === 0;
+
+        if (allFailed) {
+          sendSSE(controller, "error", {
+            error: `All ${gasNumbers.length} bills failed. Please try again.`,
+            summary: {
+              totalBills: gasNumbers.length,
+              failedBills: allResults.filter((r) => r.status === "failed"),
+            },
+          });
+        } else {
+          sendSSE(controller, "complete", {
+            success: true,
+            message: `Done in ${elapsed}s - Gas Bills: ${finalSuccessCount}/${gasNumbers.length}`,
+            summary: {
+              totalBills: gasNumbers.length,
+              electricBills: 0,
+              gasBills: gasNumbers.length,
+              calculatedBills: finalSuccessCount,
+              totalAmount: finalTotalAmount,
+              zeroAmountBills: allResults.filter((r) => r.status === "zero"),
+              failedBills: allResults.filter((r) => r.status === "failed"),
+            },
+            results: {
+              total: gasNumbers.length,
+              successful: finalSuccessCount,
+              failed: failedCount,
+              zero: zeroCount,
+              details: allResults,
+            },
+          });
+        }
 
         controller.close();
       } catch (err: any) {

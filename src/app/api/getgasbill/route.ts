@@ -17,6 +17,7 @@ interface CaptchaSession {
 async function getSessionAndCaptcha(): Promise<CaptchaSession> {
   const response = await fetch(LOGIN_URL, {
     method: "GET",
+    cache: "no-store",  // Fresh request every time
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     },
@@ -57,6 +58,7 @@ async function getSessionAndCaptcha(): Promise<CaptchaSession> {
     : `${BASE_URL}${captchaSrc.startsWith("/") ? "" : "/"}${captchaSrc}`;
 
   const captchaResponse = await fetch(captchaUrl, {
+    cache: "no-store",
     headers: {
       "Cookie": `JSESSIONID=${sessionId}`,
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -98,6 +100,7 @@ async function fetchBill(
 
   const response = await fetch(VIEWBILL_URL, {
     method: "POST",
+    cache: "no-store",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       "Cookie": `JSESSIONID=${sessionId}`,

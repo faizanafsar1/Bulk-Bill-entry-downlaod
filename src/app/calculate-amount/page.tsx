@@ -116,7 +116,7 @@ export default function CalculateAmountPage() {
                 }
             }
 
-            setMessage("File processed successfully!");
+            // Don't set success message here - let SSE events handle it
         } catch (err: any) {
             setMessage(err.message || "Network error. Please try again.");
         } finally {
@@ -160,10 +160,12 @@ export default function CalculateAmountPage() {
                 break;
             case "complete":
                 setResult(data);
+                setMessage(data.message || "File processed successfully!");
                 setLoading(false);
                 break;
             case "error":
                 setMessage(data.error || "An error occurred");
+                setResult(null);
                 setLoading(false);
                 break;
         }
@@ -386,9 +388,11 @@ export default function CalculateAmountPage() {
             )}
 
             {message && (
-                <div className={`mt-4 text-sm text-center ${message.includes("success") ? "text-green-600" : "text-red-600"
+                <div className={`mt-4 p-4 rounded-lg text-center ${message.toLowerCase().includes("success") || message.toLowerCase().includes("done")
+                        ? "bg-green-50 border border-green-300 text-green-700"
+                        : "bg-red-50 border border-red-300 text-red-700"
                     }`}>
-                    {message}
+                    <span className="font-medium">{message}</span>
                 </div>
             )}
 
