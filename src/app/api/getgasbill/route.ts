@@ -167,7 +167,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
       
       if (batch < 2) {
-        console.log("First batch failed, retrying with second batch...");
+        console.log("First batch failed, retrying with second batch..");
       }
     }
 
