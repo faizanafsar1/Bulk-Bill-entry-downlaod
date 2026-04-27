@@ -28,9 +28,8 @@ export default function ScanningPage({ title }: ScanningPageProps) {
       <h2 className="text-xl font-bold">{title}</h2>
       <div
         ref={listRef}
-        className={`${
-          billNumbers.length === 0 ? "hidden" : ""
-        } border h-[30vh] gap-2 flex flex-col  overflow-y-scroll scroll-auto border-gray-400 p-3 rounded-lg`}
+        className={`${billNumbers.length === 0 ? "hidden" : ""
+          } border h-[30vh] gap-2 flex flex-col  overflow-y-scroll scroll-auto border-gray-400 p-3 rounded-lg`}
       >
         {billNumbers.map((billNumber, i) => (
           <div key={i} className="grid grid-cols-[20px_1fr] items-center rounded-lg gap-5">
@@ -55,9 +54,8 @@ export default function ScanningPage({ title }: ScanningPageProps) {
           <video ref={videoRef} autoPlay playsInline className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
           <div
             id="redbox"
-            className={`absolute top-1/2 left-1/2 ${
-              title === "SNGPL" ? "w-[64px]" : "w-[80px]"
-            } h-4  border-2 border-red-500 -translate-x-1/2 -translate-y-1/2 pointer-events-none`}
+            className={`absolute top-1/2 left-1/2 ${title === "SNGPL" ? "w-[64px]" : "w-[80px]"
+              } h-4  border-2 border-red-500 -translate-x-1/2 -translate-y-1/2 pointer-events-none`}
           ></div>
         </div>
 
@@ -74,9 +72,8 @@ export default function ScanningPage({ title }: ScanningPageProps) {
         <button
           onClick={() => handleExtractNumber(videoRef, canvasRef, title === "SNGPL" ? 64 : 80, title === "SNGPL" ? 11 : 14)}
           disabled={loading}
-          className={` select-none px-6 py-2 rounded-lg shadow transition ${
-            loading ? "bg-gray-400 cursor-not-allowed" : "bg-teal-600 hover:bg-teal-700 text-white"
-          }`}
+          className={` select-none px-6 py-2 rounded-lg shadow transition ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-teal-600 hover:bg-teal-700 text-white"
+            }`}
         >
           {loading ? (
             <div className="flex items-center gap-2">
@@ -102,9 +99,8 @@ export default function ScanningPage({ title }: ScanningPageProps) {
           const confirmed = confirm("Confirm download?");
           if (confirmed) handleSubmit();
         }}
-        className={`${
-          billNumbers.length === 0 ? "hidden" : ""
-        } flex m-5 p-2 py-1.5 hover:bg-gray-100 cursor-pointer focus:shadow-inner shadow-black/50 mx-auto justify-self-center border border-gray-600 rounded-lg `}
+        className={`${billNumbers.length === 0 ? "hidden" : ""
+          } flex m-5 p-2 py-1.5 hover:bg-gray-100 cursor-pointer focus:shadow-inner shadow-black/50 mx-auto justify-self-center border border-gray-600 rounded-lg `}
       >
         Download File
       </button>

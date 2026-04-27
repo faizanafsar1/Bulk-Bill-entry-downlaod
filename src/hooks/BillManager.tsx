@@ -59,6 +59,7 @@ export default function useBillManager(): UseBillManagerReturn {
     setPreviewImage(processedImage);
     try {
       const text = await detectText(processedImage);
+      console.log("text: ", text);
       const refNo = text.match(/\d+/g)?.join("") || "";
 
       if (refNo.length === length) {

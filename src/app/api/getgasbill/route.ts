@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as cheerio from "cheerio";
-import { detectText } from "@/src/hooks/TextDetector";
+import { detectTextServer as detectText } from "@/src/lib/ocrServer";
 
 const BASE_URL = "https://www.sngpl.com.pk";
 const LOGIN_URL = `${BASE_URL}/login.jsp?mdids=85`;
